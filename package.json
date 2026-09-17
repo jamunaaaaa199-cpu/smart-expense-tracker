@@ -1,31 +1,34 @@
-﻿{
-    "name":  "smart-expense-tracker",
-    "version":  "2.1.0",
-    "description":  "Smart Expense Tracker - Full-Stack Personal Finance Web Application",
-    "main":  "server.js",
-    "scripts":  {
-                    "start":  "node server.js",
-                    "dev":  "node --watch server.js"
-                },
-    "engines":  {
-                    "node":  "\u003e=18.0.0"
-                },
-    "dependencies":  {
-                         "@supabase/supabase-js":  "^2.116.0",
-                         "cors":  "^2.8.5",
-                         "dotenv":  "^17.4.2",
-                         "express":  "^4.19.2"
-                     },
-    "keywords":  [
-                     "expense-tracker",
-                     "finance",
-                     "budget",
-                     "dashboard",
-                     "supabase",
-                     "postgresql",
-                     "pwa",
-                     "vercel"
-                 ],
-    "author":  "Smart Expense Tracker Team",
-    "license":  "ISC"
+{
+    "name": "smart-expense-tracker",
+    "version": "2.1.0",
+    "description": "Smart Expense Tracker - Full-Stack Personal Finance Web Application",
+    "main": "server.js",
+    "scripts": {
+        "start": "node server.js",
+        "dev": "node --watch server.js"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "dependencies": {
+        "@supabase/supabase-js": "^2.116.0",
+        "cors": "^2.8.5",
+        "dotenv": "^17.4.2",
+        "express": "^4.19.2"
+    },
+    "keywords": [
+        "expense-tracker",
+        "finance",
+        "budget",
+        "dashboard",
+        "supabase",
+        "postgresql",
+        "pwa",
+        "vercel"
+    ],
+    "author": "Smart Expense Tracker Team",
+    "license": "ISC",
+    "devDependencies": {
+        "pg": "^8.23.0"
+    }
 }
