@@ -57,9 +57,15 @@ function getCategoryBadge(category, type = 'Expense') {
     return `<span class="badge-category ${badgeClass}">${category || 'General'}</span>`;
 }
 
-// Format Currency
+// Format Currency with Intl.NumberFormat (Bug 4 Fix: precision & clean formatting)
 function formatINR(val) {
-    return '₹' + Number(val || 0).toLocaleString('en-IN');
+    const num = Number(val || 0);
+    return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+        maximumFractionDigits: 2,
+        minimumFractionDigits: 0
+    }).format(num);
 }
 
 // Common UI (active navbar, mobile bottom navigation, user greeting)
@@ -345,6 +351,13 @@ async function initIncomePage() {
     const tableBody = document.getElementById('incomeTableBody');
     const searchInput = document.getElementById('searchIncome');
     const categorySelect = document.getElementById('filterCategory');
+    const dateInput = document.getElementById('incomeDate');
+
+    const today = new Date().toISOString().split('T')[0];
+    if (dateInput) {
+        dateInput.max = today;
+        if (!dateInput.value) dateInput.value = today;
+    }
 
     async function loadIncomeList() {
         const search = searchInput ? searchInput.value.trim() : '';
@@ -354,7 +367,17 @@ async function initIncomePage() {
         if (!tableBody) return;
 
         if (items.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-4">No income records found.</td></tr>`;
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="text-center py-5">
+                        <div class="empty-state text-center">
+                            <i class="bi bi-wallet2 fs-1 text-primary d-block mb-2"></i>
+                            <h6 class="fw-bold text-dark">No Income Records Found</h6>
+                            <p class="text-muted small mb-0">Record an income stream using the form to see your balance grow.</p>
+                        </div>
+                    </td>
+                </tr>
+            `;
             return;
         }
 
@@ -366,7 +389,7 @@ async function initIncomePage() {
                 <td>${getCategoryBadge(item.category, 'Income')}</td>
                 <td class="text-success fw-bold">+ ${formatINR(item.amount)}</td>
                 <td>
-                    <button class="btn btn-sm btn-outline-danger btn-action" onclick="handleDeleteIncome(${item.income_id || index})" title="Delete">
+                    <button class="btn btn-sm btn-outline-danger btn-action" onclick="handleDeleteIncome('${item.income_id || index}')" title="Delete">
                         <i class="bi bi-trash"></i>
                     </button>
                 </td>
@@ -377,23 +400,39 @@ async function initIncomePage() {
     if (form) {
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const source = document.getElementById('incomeSource').value.trim();
-            const category = document.getElementById('incomeCategory').value;
-            const amount = document.getElementById('incomeAmount').value;
-            const income_date = document.getElementById('incomeDate').value;
+            const source = document.getElementById('incomeSource')?.value.trim();
+            const category = document.getElementById('incomeCategory')?.value;
+            const amountVal = document.getElementById('incomeAmount')?.value;
+            const income_date = document.getElementById('incomeDate')?.value;
             const description = document.getElementById('incomeDescription')?.value.trim() || '';
 
-            if (!source || !category || category === 'Select Category' || !amount || !income_date) {
-                showToast('Please fill all required fields correctly.', 'error');
+            // Strict Validation checks (Audit Section 2)
+            if (!source) {
+                showToast('Please enter a valid income source.', 'warning');
+                return;
+            }
+
+            const parsedAmount = parseFloat(amountVal);
+            if (isNaN(parsedAmount) || parsedAmount <= 0) {
+                showToast('Income amount must be greater than ₹0.', 'warning');
+                return;
+            }
+
+            if (!category || category === 'Select Category' || category === 'All') {
+                showToast('Please select a category.', 'warning');
+                return;
+            }
+
+            if (income_date && income_date > today) {
+                showToast('Income date cannot be in the future.', 'warning');
                 return;
             }
 
             try {
-                await API.addIncome({ source, category, amount, income_date, description });
+                await API.addIncome({ source, category, amount: parsedAmount, income_date, description });
                 showToast('Income added successfully!');
                 form.reset();
-                const dateInput = document.getElementById('incomeDate');
-                if (dateInput) dateInput.value = new Date().toISOString().split('T')[0];
+                if (dateInput) dateInput.value = today;
                 loadIncomeList();
             } catch (err) {
                 showToast('Failed to add income.', 'error');
@@ -403,11 +442,6 @@ async function initIncomePage() {
 
     if (searchInput) searchInput.addEventListener('input', () => loadIncomeList());
     if (categorySelect) categorySelect.addEventListener('change', () => loadIncomeList());
-
-    const dateInput = document.getElementById('incomeDate');
-    if (dateInput && !dateInput.value) {
-        dateInput.value = new Date().toISOString().split('T')[0];
-    }
 
     window.handleDeleteIncome = async function(id) {
         if (confirm('Are you sure you want to delete this income entry?')) {
@@ -428,6 +462,13 @@ async function initExpensesPage() {
     const tableBody = document.getElementById('expenseTableBody');
     const searchInput = document.getElementById('searchExpense');
     const categorySelect = document.getElementById('filterExpenseCategory');
+    const dateInput = document.getElementById('expenseDate');
+
+    const today = new Date().toISOString().split('T')[0];
+    if (dateInput) {
+        dateInput.max = today;
+        if (!dateInput.value) dateInput.value = today;
+    }
 
     async function loadExpenseList() {
         const search = searchInput ? searchInput.value.trim() : '';
@@ -442,7 +483,17 @@ async function initExpensesPage() {
         if (!tableBody) return;
 
         if (items.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">No expense records found.</td></tr>`;
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="7" class="text-center py-5">
+                        <div class="empty-state text-center">
+                            <i class="bi bi-receipt-cutoff fs-1 text-danger d-block mb-2"></i>
+                            <h6 class="fw-bold text-dark">No Expenses Logged Yet</h6>
+                            <p class="text-muted small mb-0">Record an expense using the form to monitor your monthly budget.</p>
+                        </div>
+                    </td>
+                </tr>
+            `;
             return;
         }
 
@@ -455,7 +506,7 @@ async function initExpensesPage() {
                 <td class="text-danger fw-bold">- ${formatINR(item.amount)}</td>
                 <td class="text-muted small">${item.description || '-'}</td>
                 <td>
-                    <button class="btn btn-sm btn-outline-danger btn-action" onclick="handleDeleteExpense(${item.expense_id || index})" title="Delete">
+                    <button class="btn btn-sm btn-outline-danger btn-action" onclick="handleDeleteExpense('${item.expense_id || index}')" title="Delete">
                         <i class="bi bi-trash"></i>
                     </button>
                 </td>
@@ -466,23 +517,39 @@ async function initExpensesPage() {
     if (form) {
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const title = document.getElementById('expenseTitle').value.trim();
-            const category = document.getElementById('expenseCategory').value;
-            const amount = document.getElementById('expenseAmount').value;
-            const expense_date = document.getElementById('expenseDate').value;
+            const title = document.getElementById('expenseTitle')?.value.trim();
+            const category = document.getElementById('expenseCategory')?.value;
+            const amountVal = document.getElementById('expenseAmount')?.value;
+            const expense_date = document.getElementById('expenseDate')?.value;
             const description = document.getElementById('expenseDescription')?.value.trim() || '';
 
-            if (!title || !category || category === 'Select Category' || !amount || !expense_date) {
-                showToast('Please fill all required fields correctly.', 'error');
+            // Strict Validation checks (Audit Section 2)
+            if (!title) {
+                showToast('Please enter a valid expense title.', 'warning');
+                return;
+            }
+
+            const parsedAmount = parseFloat(amountVal);
+            if (isNaN(parsedAmount) || parsedAmount <= 0) {
+                showToast('Expense amount must be greater than ₹0.', 'warning');
+                return;
+            }
+
+            if (!category || category === 'Select Category' || category === 'All') {
+                showToast('Please select a category.', 'warning');
+                return;
+            }
+
+            if (expense_date && expense_date > today) {
+                showToast('Expense date cannot be in the future.', 'warning');
                 return;
             }
 
             try {
-                await API.addExpense({ title, category, amount, expense_date, description });
+                await API.addExpense({ title, category, amount: parsedAmount, expense_date, description });
                 showToast('Expense recorded successfully!');
                 form.reset();
-                const dateInput = document.getElementById('expenseDate');
-                if (dateInput) dateInput.value = new Date().toISOString().split('T')[0];
+                if (dateInput) dateInput.value = today;
                 loadExpenseList();
             } catch (err) {
                 showToast('Failed to record expense.', 'error');
@@ -493,13 +560,8 @@ async function initExpensesPage() {
     if (searchInput) searchInput.addEventListener('input', () => loadExpenseList());
     if (categorySelect) categorySelect.addEventListener('change', () => loadExpenseList());
 
-    const dateInput = document.getElementById('expenseDate');
-    if (dateInput && !dateInput.value) {
-        dateInput.value = new Date().toISOString().split('T')[0];
-    }
-
     window.handleDeleteExpense = async function(id) {
-        if (confirm('Are you sure you want to delete this expense record?')) {
+        if (confirm('Are you sure you want to permanently delete this expense record?')) {
             await API.deleteExpense(id);
             showToast('Expense record deleted.');
             loadExpenseList();
