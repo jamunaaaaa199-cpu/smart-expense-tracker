@@ -440,7 +440,11 @@ app.use((req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Start Server
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Smart Expense Tracker Server running at http://0.0.0.0:${PORT}`);
-});
+// Start Server (when run standalone)
+if (!process.env.VERCEL) {
+    app.listen(PORT, '0.0.0.0', () => {
+        console.log(`🚀 Smart Expense Tracker Server running at http://0.0.0.0:${PORT}`);
+    });
+}
+
+module.exports = app;
