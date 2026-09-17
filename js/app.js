@@ -1,9 +1,87 @@
+
+// =========================================================
+// STARTING MEDIA ANIMATION & DELETE MODAL CONTROLLERS
+// =========================================================
+function initStartingAnimation() {
+    let splash = document.getElementById('appSplashLoader');
+    if (!splash) {
+        const splashHtml = `
+            <div id="appSplashLoader" class="app-splash-screen">
+                <div class="splash-card">
+                    <div class="splash-logo-wrap">
+                        <img src="favicon.svg" class="splash-logo" alt="Smart Expense Tracker">
+                        <div class="splash-pulse-ring"></div>
+                    </div>
+                    <h3 class="splash-title">Smart<span class="text-primary">Expense</span></h3>
+                    <p class="splash-tagline">Intelligent Financial Architecture</p>
+                    <div class="splash-progress-bar">
+                        <div class="splash-progress-fill"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('afterbegin', splashHtml);
+        splash = document.getElementById('appSplashLoader');
+    }
+
+    setTimeout(() => {
+        if (splash) {
+            splash.classList.add('splash-hidden');
+            setTimeout(() => splash.remove(), 500);
+        }
+    }, 600);
+}
+
+// Modern Delete Confirmation Modal (Replaces browser popups)
+window.showDeleteConfirmation = function(message, onConfirm) {
+    let modalEl = document.getElementById('deleteConfirmModal');
+    if (!modalEl) {
+        const modalHtml = `
+            <div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered modal-sm">
+                    <div class="modal-content border-0 shadow-lg rounded-4 text-center p-3">
+                        <div class="modal-body">
+                            <div class="text-danger mb-2" style="font-size: 2.75rem;">⚠️</div>
+                            <h5 class="fw-bold text-dark mb-1">Confirm Deletion</h5>
+                            <p class="text-muted small mb-4" id="deleteConfirmMessage">Are you sure you want to permanently delete this transaction? This action cannot be undone.</p>
+                            <div class="d-flex justify-content-center gap-2">
+                                <button type="button" class="btn btn-sm btn-light px-3 fw-semibold" data-bs-dismiss="modal">Cancel</button>
+                                <button type="button" class="btn btn-sm btn-danger px-4 fw-semibold" id="confirmDeleteBtn">Yes, Delete</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        modalEl = document.getElementById('deleteConfirmModal');
+    }
+
+    if (message) {
+        document.getElementById('deleteConfirmMessage').textContent = message;
+    }
+
+    const btn = document.getElementById('confirmDeleteBtn');
+    const newBtn = btn.cloneNode(true);
+    btn.parentNode.replaceChild(newBtn, btn);
+
+    newBtn.addEventListener('click', async () => {
+        const bsModal = bootstrap.Modal.getInstance(modalEl);
+        if (bsModal) bsModal.hide();
+        await onConfirm();
+    });
+
+    const bsModal = new bootstrap.Modal(modalEl);
+    bsModal.show();
+};
+
 // =========================================================
 // Smart Expense Tracker - Master UI & Application Controller
 // Version 2.1 - 4-Stage Budget Warning & Mobile/Desktop Engine
 // =========================================================
 
 document.addEventListener('DOMContentLoaded', () => {
+    initStartingAnimation();
     registerServiceWorker();
     setupCommonUI();
     initCurrentPage();
@@ -638,16 +716,22 @@ async function initIncomePage() {
             const description = document.getElementById('incomeDescription')?.value.trim() || '';
 
             // Strict Validation checks (Point 2, 3, 4)
+            const sourceEl = document.getElementById('incomeSource');
             if (!source) {
-                showToast('Please enter a valid income source.', 'warning');
+                if (sourceEl) sourceEl.classList.add('is-invalid');
+                showToast('Income source title cannot be empty or spaces.', 'warning');
                 return;
             }
+            if (sourceEl) sourceEl.classList.remove('is-invalid');
 
             const parsedAmount = parseFloat(amountVal);
+            const amtEl = document.getElementById('incomeAmount');
             if (isNaN(parsedAmount) || parsedAmount <= 0) {
-                showToast('Income amount must be greater than ₹0.00.', 'warning');
+                if (amtEl) amtEl.classList.add('is-invalid');
+                showToast('Income amount must be a positive number greater than ₹0.00.', 'warning');
                 return;
             }
+            if (amtEl) amtEl.classList.remove('is-invalid');
 
             if (!category || category === 'Select Category' || category === 'All') {
                 showToast('Please select a valid income category.', 'warning');
@@ -785,16 +869,22 @@ async function initExpensesPage() {
             const description = document.getElementById('expenseDescription')?.value.trim() || '';
 
             // Strict Validation checks (Point 2, 3, 4)
+            const titleEl = document.getElementById('expenseTitle');
             if (!title) {
-                showToast('Please enter a valid expense title.', 'warning');
+                if (titleEl) titleEl.classList.add('is-invalid');
+                showToast('Expense title cannot be empty or spaces.', 'warning');
                 return;
             }
+            if (titleEl) titleEl.classList.remove('is-invalid');
 
             const parsedAmount = parseFloat(amountVal);
+            const amtExpEl = document.getElementById('expenseAmount');
             if (isNaN(parsedAmount) || parsedAmount <= 0) {
-                showToast('Expense amount must be greater than ₹0.00.', 'warning');
+                if (amtExpEl) amtExpEl.classList.add('is-invalid');
+                showToast('Expense amount must be a positive number greater than ₹0.00.', 'warning');
                 return;
             }
+            if (amtExpEl) amtExpEl.classList.remove('is-invalid');
 
             if (!category || category === 'Select Category' || category === 'All') {
                 showToast('Please select a valid expense category.', 'warning');

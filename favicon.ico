@@ -1,4 +1,32 @@
-﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <rect width="100" height="100" rx="20" fill="#2563eb"/>
-  <text x="50%" y="55%" dominant-baseline="central" text-anchor="middle" font-size="60">💰</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e3a8a"/>
+      <stop offset="50%" stop-color="#2563eb"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fef08a"/>
+      <stop offset="40%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#b45309"/>
+    </linearGradient>
+    <linearGradient id="emeraldGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#059669"/>
+      <stop offset="100%" stop-color="#10b981"/>
+    </linearGradient>
+    <filter id="dropShadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#0f172a" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  <rect x="8" y="8" width="144" height="144" rx="36" fill="url(#bgGrad)" filter="url(#dropShadow)" stroke="#60a5fa" stroke-width="2" stroke-opacity="0.4"/>
+  <path d="M 28 112 L 132 112 M 28 82 L 132 82 M 28 52 L 132 52" stroke="#93c5fd" stroke-width="1" stroke-opacity="0.25" stroke-dasharray="3 3"/>
+  <rect x="34" y="84" width="16" height="28" rx="4" fill="#60a5fa" opacity="0.85"/>
+  <rect x="58" y="66" width="16" height="46" rx="4" fill="#38bdf8" opacity="0.9"/>
+  <rect x="82" y="46" width="16" height="66" rx="4" fill="url(#emeraldGrad)"/>
+  <path d="M 32 94 Q 68 84 94 48" fill="none" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round"/>
+  <polygon points="94,40 106,48 96,56" fill="#ffffff"/>
+  <circle cx="114" cy="98" r="22" fill="url(#goldGrad)" stroke="#fef3c7" stroke-width="1.5"/>
+  <circle cx="114" cy="98" r="17" fill="none" stroke="#d97706" stroke-width="1.2" stroke-opacity="0.7"/>
+  <text x="114" y="105" font-family="-apple-system, system-ui, sans-serif" font-weight="900" font-size="20" fill="#78350f" text-anchor="middle">₹</text>
+  <polygon points="128,78 131,84 137,87 131,90 128,96 125,90 119,87 125,84" fill="#ffffff" opacity="0.95"/>
 </svg>

@@ -30,8 +30,9 @@
 <!-- Navbar -->
 <nav class="navbar navbar-expand-lg navbar-custom sticky-top">
     <div class="container">
-        <a class="navbar-brand" href="dashboard.html">
-            <span>💰</span> Smart Expense Tracker
+        <a class="navbar-brand d-flex align-items-center gap-2" href="dashboard.html">
+            <img src="favicon.svg" width="32" height="32" class="rounded-2 shadow-sm" alt="Smart Expense Logo">
+            <span class="fw-bold">Smart<span class="text-primary">Expense</span></span>
         </a>
 
         <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navbarMenu">
@@ -132,7 +133,15 @@
             <div class="col-lg-8">
                 <div class="card card-modern">
                     <div class="card-header-modern bg-white">
-                        <div class="fw-bold">Expense History</div>
+                        <div class="d-flex align-items-center gap-2">
+            <div class="fw-bold">Expense History</div>
+            <button class="btn btn-sm btn-outline-success py-0 px-2 fw-semibold" onclick="API.downloadCSV()" title="Export Expenses CSV">
+                <i class="bi bi-download me-1"></i> CSV
+            </button>
+            <button class="btn btn-sm btn-outline-secondary py-0 px-2 fw-semibold" onclick="window.print()" title="Print or Save PDF">
+                <i class="bi bi-printer me-1"></i> PDF
+            </button>
+        </div>
                         <div class="d-flex gap-2">
                             <input type="text" id="searchExpense" class="form-control form-control-sm" 
                                    placeholder="Search expense..." style="max-width: 180px;">
