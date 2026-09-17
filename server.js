@@ -1,483 +1,331 @@
-// =========================================================
-// Smart Expense Tracker - Express Server & REST API
+﻿// =========================================================
+// Smart Expense Tracker - Express Server + Supabase REST API
 // =========================================================
 
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
-const db = require('./db');
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
+const path = require("path");
+const supabase = require("./db");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
+// ── Middleware ────────────────────────────────────────────
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Serve static frontend files
 app.use(express.static(__dirname));
+app.use("/css", express.static(path.join(__dirname, "css")));
+app.use("/js", express.static(path.join(__dirname, "js")));
 
 // =========================================================
-// AUTHENTICATION APIs
+// AUTH APIs
 // =========================================================
 
 // Register
-app.post('/api/auth/register', (req, res) => {
+app.post("/api/auth/register", async (req, res) => {
     const { full_name, email, mobile, password } = req.body;
+    if (!full_name || !email || !password)
+        return res.status(400).json({ success: false, message: "Please provide all required fields." });
 
-    if (!full_name || !email || !password) {
-        return res.status(400).json({ success: false, message: 'Please provide all required fields.' });
-    }
+    const cleanEmail = (email || "").trim().toLowerCase();
 
-    const checkSql = 'SELECT user_id FROM users WHERE email = ?';
-    db.get(checkSql, [email], (err, row) => {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        if (row) return res.status(400).json({ success: false, message: 'Email already registered.' });
+    // Check existing
+    const { data: existing } = await supabase.from("users").select("user_id").eq("email", cleanEmail).single();
+    if (existing) return res.status(400).json({ success: false, message: "Email already registered." });
 
-        const insertSql = 'INSERT INTO users (full_name, email, mobile, password) VALUES (?, ?, ?, ?)';
-        db.run(insertSql, [full_name, email, mobile || '', password], function (err) {
-            if (err) return res.status(500).json({ success: false, message: err.message });
-            return res.status(201).json({
-                success: true,
-                message: 'User registered successfully!',
-                user: { user_id: this.lastID, full_name, email, mobile }
-            });
-        });
+    const { data, error } = await supabase.from("users").insert([{
+        full_name: full_name.trim(), email: cleanEmail,
+        mobile: mobile || "", password: password.trim()
+    }]).select().single();
+
+    if (error) return res.status(500).json({ success: false, message: error.message });
+    return res.status(201).json({
+        success: true, message: "User registered successfully!",
+        user: { user_id: data.user_id, full_name: data.full_name, email: data.email, mobile: data.mobile }
     });
 });
 
 // Login
-app.post('/api/auth/login', (req, res) => {
+app.post("/api/auth/login", async (req, res) => {
     const { email, password } = req.body;
+    if (!email || !password)
+        return res.status(400).json({ success: false, message: "Email and password are required." });
 
-    if (!email || !password) {
-        return res.status(400).json({ success: false, message: 'Email and password are required.' });
-    }
+    const cleanEmail = (email || "").trim().toLowerCase();
+    const cleanPass = (password || "").trim();
 
-    // Guaranteed instant demo authentication on serverless cold starts
-    const cleanEmail = (email || '').trim().toLowerCase();
-    const cleanPass = (password || '').trim();
-
-    if ((cleanEmail === 'admin@gmail.com' && cleanPass === 'admin123') || 
-        (cleanEmail === 'demo@example.com' && cleanPass === '123456')) {
+    // Instant demo authentication (guaranteed, no DB needed)
+    if ((cleanEmail === "admin@gmail.com" && cleanPass === "admin123") ||
+        (cleanEmail === "demo@example.com" && cleanPass === "123456")) {
         return res.json({
-            success: true,
-            message: 'Login successful!',
-            user: {
-                user_id: 1,
-                full_name: 'Demo Admin',
-                email: cleanEmail,
-                mobile: '9876543210'
-            }
+            success: true, message: "Login successful!",
+            user: { user_id: 1, full_name: "Demo Admin", email: cleanEmail, mobile: "9876543210" }
         });
     }
 
-    const sql = 'SELECT user_id, full_name, email, mobile, password FROM users WHERE email = ?';
-    db.get(sql, [cleanEmail], (err, user) => {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        if (!user || user.password !== cleanPass) {
-            return res.status(401).json({ success: false, message: 'Invalid email or password.' });
-        }
+    const { data: user, error } = await supabase.from("users")
+        .select("user_id, full_name, email, mobile, password")
+        .eq("email", cleanEmail).single();
 
-        return res.json({
-            success: true,
-            message: 'Login successful!',
-            user: {
-                user_id: user.user_id,
-                full_name: user.full_name,
-                email: user.email,
-                mobile: user.mobile
-            }
-        });
+    if (error || !user || user.password !== cleanPass)
+        return res.status(401).json({ success: false, message: "Invalid email or password." });
+
+    return res.json({
+        success: true, message: "Login successful!",
+        user: { user_id: user.user_id, full_name: user.full_name, email: user.email, mobile: user.mobile }
     });
 });
 
 // =========================================================
 // DASHBOARD STATS API
 // =========================================================
-app.get('/api/dashboard/stats', (req, res) => {
-    const userId = req.query.user_id || 1;
+app.get("/api/dashboard/stats", async (req, res) => {
+    const userId = parseInt(req.query.user_id) || 1;
 
-    const queries = {
-        totalIncome: 'SELECT IFNULL(SUM(amount), 0) as total FROM income WHERE user_id = ?',
-        totalExpense: 'SELECT IFNULL(SUM(amount), 0) as total FROM expenses WHERE user_id = ?',
-        budget: 'SELECT budget_amount FROM budgets WHERE user_id = ? ORDER BY budget_id DESC LIMIT 1',
-        recentTransactions: `
-            SELECT income_id as id, income_date as date, source as title, category, amount, 'Income' as type
-            FROM income WHERE user_id = ?
-            UNION ALL
-            SELECT expense_id as id, expense_date as date, title, category, amount, 'Expense' as type
-            FROM expenses WHERE user_id = ?
-            ORDER BY date DESC LIMIT 6
-        `
-    };
+    const [incRes, expRes, bgtRes, txRes] = await Promise.all([
+        supabase.from("income").select("amount").eq("user_id", userId),
+        supabase.from("expenses").select("amount").eq("user_id", userId),
+        supabase.from("budgets").select("budget_amount").eq("user_id", userId).order("budget_id", { ascending: false }).limit(1),
+        supabase.from("income").select("income_id, income_date, source, category, amount").eq("user_id", userId).order("income_date", { ascending: false }).limit(6)
+    ]);
 
-    db.get(queries.totalIncome, [userId], (err, incRow) => {
-        const rawIncome = incRow ? incRow.total : 0;
+    const totalIncome = (incRes.data || []).reduce((s, r) => s + Number(r.amount || 0), 0) || 65500;
+    const totalExpense = (expRes.data || []).reduce((s, r) => s + Number(r.amount || 0), 0) || 10250;
+    const budgetAmount = (bgtRes.data && bgtRes.data[0]) ? Number(bgtRes.data[0].budget_amount) : 40000;
+    const balance = totalIncome - totalExpense;
+    const spentPercent = budgetAmount > 0 ? Math.min(Math.round((totalExpense / budgetAmount) * 100), 100) : 0;
+    const remainingBudget = Math.max(budgetAmount - totalExpense, 0);
 
-        db.get(queries.totalExpense, [userId], (err, expRow) => {
-            const rawExpense = expRow ? expRow.total : 0;
+    // Merge income + expenses for recent transactions
+    const [incTx, expTx] = await Promise.all([
+        supabase.from("income").select("income_id,income_date,source,category,amount").eq("user_id", userId).order("income_date", { ascending: false }).limit(6),
+        supabase.from("expenses").select("expense_id,expense_date,title,category,amount").eq("user_id", userId).order("expense_date", { ascending: false }).limit(6)
+    ]);
 
-            db.get(queries.budget, [userId], (err, bgtRow) => {
-                const budgetAmount = (bgtRow && bgtRow.budget_amount) ? bgtRow.budget_amount : 40000;
-                const totalIncome = rawIncome > 0 ? rawIncome : 65500;
-                const totalExpense = rawExpense > 0 ? rawExpense : 6000;
-                const balance = totalIncome - totalExpense;
-                const spentPercent = budgetAmount > 0 ? Math.min(Math.round((totalExpense / budgetAmount) * 100), 100) : 0;
-                const remainingBudget = Math.max(budgetAmount - totalExpense, 0);
+    const incTxList = (incTx.data || []).map(r => ({ id: r.income_id, date: r.income_date, title: r.source, category: r.category, amount: r.amount, type: "Income" }));
+    const expTxList = (expTx.data || []).map(r => ({ id: r.expense_id, date: r.expense_date, title: r.title, category: r.category, amount: r.amount, type: "Expense" }));
+    const recentTransactions = [...incTxList, ...expTxList].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 6);
 
-                db.all(queries.recentTransactions, [userId, userId], (err, txRows) => {
-                    const fallbackTxs = [
-                        { id: 4, date: '2026-07-12', title: 'Festival Bonus', category: 'Bonus', amount: 5000, type: 'Income' },
-                        { id: 1, date: '2026-07-12', title: 'Restaurant Dinner', category: 'Food', amount: 750, type: 'Expense' },
-                        { id: 2, date: '2026-07-11', title: 'Bike Fuel', category: 'Travel', amount: 1200, type: 'Expense' },
-                        { id: 3, date: '2026-07-10', title: 'Stock Dividend', category: 'Investment', amount: 2500, type: 'Income' },
-                        { id: 4, date: '2026-07-09', title: 'Weekend Clothes', category: 'Shopping', amount: 2500, type: 'Expense' },
-                        { id: 5, date: '2026-07-07', title: 'Groceries', category: 'Food', amount: 3500, type: 'Expense' }
-                    ];
+    const fallback = [
+        { id: 4, date: "2026-07-12", title: "Festival Bonus", category: "Bonus", amount: 5000, type: "Income" },
+        { id: 1, date: "2026-07-12", title: "Restaurant Dinner", category: "Food", amount: 750, type: "Expense" },
+        { id: 2, date: "2026-07-11", title: "Bike Fuel", category: "Travel", amount: 1200, type: "Expense" },
+        { id: 3, date: "2026-07-10", title: "Stock Dividend", category: "Investment", amount: 2500, type: "Income" },
+        { id: 4, date: "2026-07-09", title: "Weekend Clothes", category: "Shopping", amount: 2500, type: "Expense" },
+        { id: 5, date: "2026-07-07", title: "Groceries", category: "Food", amount: 3500, type: "Expense" }
+    ];
 
-                    return res.json({
-                        success: true,
-                        data: {
-                            totalIncome,
-                            totalExpense,
-                            balance,
-                            budgetAmount,
-                            spentPercent,
-                            remainingBudget,
-                            recentTransactions: (txRows && txRows.length > 0) ? txRows : fallbackTxs
-                        }
-                    });
-                });
-            });
-        });
+    return res.json({
+        success: true, data: {
+            totalIncome, totalExpense, balance, budgetAmount, spentPercent, remainingBudget,
+            recentTransactions: recentTransactions.length > 0 ? recentTransactions : fallback
+        }
     });
 });
 
 // =========================================================
 // INCOME APIs
 // =========================================================
-
-// Get all income
-app.get('/api/income', (req, res) => {
-    const userId = req.query.user_id || 1;
+app.get("/api/income", async (req, res) => {
+    const userId = parseInt(req.query.user_id) || 1;
     const { search, category } = req.query;
 
-    let sql = 'SELECT * FROM income WHERE user_id = ?';
-    const params = [userId];
+    let query = supabase.from("income").select("*").eq("user_id", userId).order("income_date", { ascending: false });
+    if (category && category !== "All" && category !== "Select Category") query = query.eq("category", category);
+    if (search) query = query.or(`source.ilike.%${search}%,category.ilike.%${search}%,description.ilike.%${search}%`);
 
-    if (category && category !== 'All' && category !== 'Select Category') {
-        sql += ' AND category = ?';
-        params.push(category);
-    }
-
-    if (search) {
-        sql += ' AND (source LIKE ? OR description LIKE ? OR category LIKE ?)';
-        const queryTerm = `%${search}%`;
-        params.push(queryTerm, queryTerm, queryTerm);
-    }
-
-    sql += ' ORDER BY income_date DESC, income_id DESC';
-
-    db.all(sql, params, (err, rows) => {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        res.json({ success: true, data: rows });
-    });
+    const { data, error } = await query;
+    if (error) return res.status(500).json({ success: false, message: error.message });
+    res.json({ success: true, data: data || [] });
 });
 
-// Create income
-app.post('/api/income', (req, res) => {
+app.post("/api/income", async (req, res) => {
     const { user_id, source, category, amount, income_date, description } = req.body;
-    const uid = user_id || 1;
+    if (!source || !category || !amount || !income_date)
+        return res.status(400).json({ success: false, message: "Source, category, amount and date are required." });
 
-    if (!source || !category || !amount || !income_date) {
-        return res.status(400).json({ success: false, message: 'Source, category, amount and date are required.' });
-    }
+    const { data, error } = await supabase.from("income").insert([{
+        user_id: user_id || 1, source, category, amount: Number(amount), income_date, description: description || ""
+    }]).select().single();
 
-    const sql = `INSERT INTO income (user_id, source, category, amount, income_date, description) VALUES (?, ?, ?, ?, ?, ?)`;
-    db.run(sql, [uid, source, category, Number(amount), income_date, description || ''], function (err) {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        res.status(201).json({
-            success: true,
-            message: 'Income added successfully!',
-            income_id: this.lastID
-        });
-    });
+    if (error) return res.status(500).json({ success: false, message: error.message });
+    res.status(201).json({ success: true, message: "Income added successfully!", income_id: data.income_id });
 });
 
-// Update income
-app.put('/api/income/:id', (req, res) => {
-    const incomeId = req.params.id;
+app.put("/api/income/:id", async (req, res) => {
     const { source, category, amount, income_date, description } = req.body;
-
-    const sql = `
-        UPDATE income
-        SET source = ?, category = ?, amount = ?, income_date = ?, description = ?
-        WHERE income_id = ?
-    `;
-
-    db.run(sql, [source, category, Number(amount), income_date, description || '', incomeId], function (err) {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        res.json({ success: true, message: 'Income updated successfully!' });
-    });
+    const { error } = await supabase.from("income").update({ source, category, amount: Number(amount), income_date, description: description || "" })
+        .eq("income_id", req.params.id);
+    if (error) return res.status(500).json({ success: false, message: error.message });
+    res.json({ success: true, message: "Income updated successfully!" });
 });
 
-// Delete income
-app.delete('/api/income/:id', (req, res) => {
-    const incomeId = req.params.id;
-    db.run('DELETE FROM income WHERE income_id = ?', [incomeId], function (err) {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        res.json({ success: true, message: 'Income deleted successfully!' });
-    });
+app.delete("/api/income/:id", async (req, res) => {
+    const { error } = await supabase.from("income").delete().eq("income_id", req.params.id);
+    if (error) return res.status(500).json({ success: false, message: error.message });
+    res.json({ success: true, message: "Income deleted successfully!" });
 });
 
 // =========================================================
 // EXPENSES APIs
 // =========================================================
-
-// Get all expenses
-app.get('/api/expenses', (req, res) => {
-    const userId = req.query.user_id || 1;
+app.get("/api/expenses", async (req, res) => {
+    const userId = parseInt(req.query.user_id) || 1;
     const { search, category } = req.query;
 
-    let sql = 'SELECT * FROM expenses WHERE user_id = ?';
-    const params = [userId];
+    let query = supabase.from("expenses").select("*").eq("user_id", userId).order("expense_date", { ascending: false });
+    if (category && category !== "All" && category !== "Select Category") query = query.eq("category", category);
+    if (search) query = query.or(`title.ilike.%${search}%,category.ilike.%${search}%,description.ilike.%${search}%`);
 
-    if (category && category !== 'All' && category !== 'Select Category') {
-        sql += ' AND category = ?';
-        params.push(category);
-    }
-
-    if (search) {
-        sql += ' AND (title LIKE ? OR description LIKE ? OR category LIKE ?)';
-        const queryTerm = `%${search}%`;
-        params.push(queryTerm, queryTerm, queryTerm);
-    }
-
-    sql += ' ORDER BY expense_date DESC, expense_id DESC';
-
-    db.all(sql, params, (err, rows) => {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        res.json({ success: true, data: rows });
-    });
+    const { data, error } = await query;
+    if (error) return res.status(500).json({ success: false, message: error.message });
+    res.json({ success: true, data: data || [] });
 });
 
-// Create expense
-app.post('/api/expenses', (req, res) => {
+app.post("/api/expenses", async (req, res) => {
     const { user_id, title, category, amount, expense_date, description } = req.body;
-    const uid = user_id || 1;
+    if (!title || !category || !amount || !expense_date)
+        return res.status(400).json({ success: false, message: "Title, category, amount and date are required." });
 
-    if (!title || !category || !amount || !expense_date) {
-        return res.status(400).json({ success: false, message: 'Title, category, amount and date are required.' });
-    }
+    const { data, error } = await supabase.from("expenses").insert([{
+        user_id: user_id || 1, title, category, amount: Number(amount), expense_date, description: description || ""
+    }]).select().single();
 
-    const sql = `INSERT INTO expenses (user_id, title, category, amount, expense_date, description) VALUES (?, ?, ?, ?, ?, ?)`;
-    db.run(sql, [uid, title, category, Number(amount), expense_date, description || ''], function (err) {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        res.status(201).json({
-            success: true,
-            message: 'Expense recorded successfully!',
-            expense_id: this.lastID
-        });
-    });
+    if (error) return res.status(500).json({ success: false, message: error.message });
+    res.status(201).json({ success: true, message: "Expense recorded successfully!", expense_id: data.expense_id });
 });
 
-// Update expense
-app.put('/api/expenses/:id', (req, res) => {
-    const expenseId = req.params.id;
+app.put("/api/expenses/:id", async (req, res) => {
     const { title, category, amount, expense_date, description } = req.body;
-
-    const sql = `
-        UPDATE expenses
-        SET title = ?, category = ?, amount = ?, expense_date = ?, description = ?
-        WHERE expense_id = ?
-    `;
-
-    db.run(sql, [title, category, Number(amount), expense_date, description || '', expenseId], function (err) {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        res.json({ success: true, message: 'Expense updated successfully!' });
-    });
+    const { error } = await supabase.from("expenses").update({ title, category, amount: Number(amount), expense_date, description: description || "" })
+        .eq("expense_id", req.params.id);
+    if (error) return res.status(500).json({ success: false, message: error.message });
+    res.json({ success: true, message: "Expense updated successfully!" });
 });
 
-// Delete expense
-app.delete('/api/expenses/:id', (req, res) => {
-    const expenseId = req.params.id;
-    db.run('DELETE FROM expenses WHERE expense_id = ?', [expenseId], function (err) {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        res.json({ success: true, message: 'Expense deleted successfully!' });
-    });
+app.delete("/api/expenses/:id", async (req, res) => {
+    const { error } = await supabase.from("expenses").delete().eq("expense_id", req.params.id);
+    if (error) return res.status(500).json({ success: false, message: error.message });
+    res.json({ success: true, message: "Expense deleted successfully!" });
 });
 
 // =========================================================
 // BUDGET APIs
 // =========================================================
-app.get('/api/budget', (req, res) => {
-    const userId = req.query.user_id || 1;
-    db.get('SELECT * FROM budgets WHERE user_id = ? ORDER BY budget_id DESC LIMIT 1', [userId], (err, row) => {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        res.json({ success: true, data: row || { budget_amount: 40000, month: new Date().getMonth() + 1, year: new Date().getFullYear() } });
-    });
+app.get("/api/budget", async (req, res) => {
+    const userId = parseInt(req.query.user_id) || 1;
+    const { data, error } = await supabase.from("budgets").select("*").eq("user_id", userId).order("budget_id", { ascending: false }).limit(1).single();
+    if (error || !data)
+        return res.json({ success: true, data: { budget_amount: 40000, month: new Date().getMonth() + 1, year: new Date().getFullYear() } });
+    res.json({ success: true, data });
 });
 
-app.post('/api/budget', (req, res) => {
+app.post("/api/budget", async (req, res) => {
     const { user_id, month, year, budget_amount } = req.body;
     const uid = user_id || 1;
     const m = month || (new Date().getMonth() + 1);
     const y = year || new Date().getFullYear();
 
-    const sql = `
-        INSERT INTO budgets (user_id, month, year, budget_amount)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(user_id, month, year)
-        DO UPDATE SET budget_amount = excluded.budget_amount
-    `;
+    // Upsert (insert or update)
+    const { data: existing } = await supabase.from("budgets").select("budget_id").eq("user_id", uid).eq("month", m).eq("year", y).single();
 
-    db.run(sql, [uid, m, y, Number(budget_amount)], function (err) {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        res.json({ success: true, message: 'Budget updated successfully!' });
-    });
+    let error;
+    if (existing) {
+        ({ error } = await supabase.from("budgets").update({ budget_amount: Number(budget_amount) }).eq("budget_id", existing.budget_id));
+    } else {
+        ({ error } = await supabase.from("budgets").insert([{ user_id: uid, month: m, year: y, budget_amount: Number(budget_amount) }]));
+    }
+
+    if (error) return res.status(500).json({ success: false, message: error.message });
+    res.json({ success: true, message: "Budget updated successfully!" });
 });
 
 // =========================================================
-// REPORTS & ANALYTICS APIs
+// REPORTS & ANALYTICS
 // =========================================================
-app.get('/api/reports/analytics', (req, res) => {
-    const userId = req.query.user_id || 1;
+app.get("/api/reports/analytics", async (req, res) => {
+    const userId = parseInt(req.query.user_id) || 1;
     const { month, category } = req.query;
 
-    let incomeFilter = 'WHERE user_id = ?';
-    let expenseFilter = 'WHERE user_id = ?';
-    const incParams = [userId];
-    const expParams = [userId];
+    let incQuery = supabase.from("income").select("*").eq("user_id", userId);
+    let expQuery = supabase.from("expenses").select("*").eq("user_id", userId);
 
     if (month) {
-        incomeFilter += ' AND strftime("%Y-%m", income_date) = ?';
-        expenseFilter += ' AND strftime("%Y-%m", expense_date) = ?';
-        incParams.push(month);
-        expParams.push(month);
+        incQuery = incQuery.gte("income_date", `${month}-01`).lte("income_date", `${month}-31`);
+        expQuery = expQuery.gte("expense_date", `${month}-01`).lte("expense_date", `${month}-31`);
+    }
+    if (category && category !== "All" && category !== "All Categories") {
+        incQuery = incQuery.eq("category", category);
+        expQuery = expQuery.eq("category", category);
     }
 
-    if (category && category !== 'All' && category !== 'All Categories') {
-        incomeFilter += ' AND category = ?';
-        expenseFilter += ' AND category = ?';
-        incParams.push(category);
-        expParams.push(category);
-    }
+    const [{ data: incomes }, { data: expenses }] = await Promise.all([incQuery, expQuery]);
 
-    const expCategorySql = `
-        SELECT category, SUM(amount) as total
-        FROM expenses ${expenseFilter}
-        GROUP BY category
-    `;
+    const incList = incomes || [];
+    const expList = expenses || [];
 
-    const incCategorySql = `
-        SELECT category, SUM(amount) as total
-        FROM income ${incomeFilter}
-        GROUP BY category
-    `;
+    const totalIncome = incList.reduce((s, r) => s + Number(r.amount || 0), 0);
+    const totalExpense = expList.reduce((s, r) => s + Number(r.amount || 0), 0);
 
-    const monthlyTrendSql = `
-        SELECT strftime("%Y-%m", date) as month_label,
-               SUM(CASE WHEN type = 'Income' THEN amount ELSE 0 END) as total_income,
-               SUM(CASE WHEN type = 'Expense' THEN amount ELSE 0 END) as total_expense
-        FROM (
-            SELECT income_date as date, amount, 'Income' as type FROM income WHERE user_id = ?
-            UNION ALL
-            SELECT expense_date as date, amount, 'Expense' as type FROM expenses WHERE user_id = ?
-        )
-        GROUP BY month_label
-        ORDER BY month_label ASC
-        LIMIT 6
-    `;
+    // Category expense breakdown
+    const catMap = {};
+    expList.forEach(e => { catMap[e.category] = (catMap[e.category] || 0) + Number(e.amount || 0); });
+    const categoryExpenseBreakdown = Object.keys(catMap).map(k => ({ category: k, total: catMap[k] }));
 
-    const transactionsSql = `
-        SELECT income_id as id, income_date as date, source as title, category, amount, 'Income' as type, description
-        FROM income ${incomeFilter}
-        UNION ALL
-        SELECT expense_id as id, expense_date as date, title, category, amount, 'Expense' as type, description
-        FROM expenses ${expenseFilter}
-        ORDER BY date DESC
-    `;
+    // Merge transactions
+    const transactions = [
+        ...incList.map(i => ({ id: i.income_id, date: i.income_date, title: i.source, category: i.category, amount: Number(i.amount), type: "Income", description: i.description })),
+        ...expList.map(e => ({ id: e.expense_id, date: e.expense_date, title: e.title, category: e.category, amount: Number(e.amount), type: "Expense", description: e.description }))
+    ].sort((a, b) => new Date(b.date) - new Date(a.date));
 
-    db.all(expCategorySql, expParams, (err, expCategories) => {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-
-        db.all(incCategorySql, incParams, (err, incCategories) => {
-            if (err) return res.status(500).json({ success: false, message: err.message });
-
-            db.all(monthlyTrendSql, [userId, userId], (err, trends) => {
-                if (err) return res.status(500).json({ success: false, message: err.message });
-
-                db.all(transactionsSql, [...incParams, ...expParams], (err, transactions) => {
-                    if (err) return res.status(500).json({ success: false, message: err.message });
-
-                    const totalInc = (transactions || []).filter(t => t.type === 'Income').reduce((s, t) => s + t.amount, 0);
-                    const totalExp = (transactions || []).filter(t => t.type === 'Expense').reduce((s, t) => s + t.amount, 0);
-
-                    res.json({
-                        success: true,
-                        data: {
-                            totalIncome: totalInc,
-                            totalExpense: totalExp,
-                            netSavings: totalInc - totalExp,
-                            categoryExpenseBreakdown: expCategories || [],
-                            categoryIncomeBreakdown: incCategories || [],
-                            monthlyTrends: trends || [],
-                            transactions: transactions || []
-                        }
-                    });
-                });
-            });
-        });
+    res.json({
+        success: true, data: {
+            totalIncome, totalExpense, netSavings: totalIncome - totalExpense,
+            categoryExpenseBreakdown: categoryExpenseBreakdown.length ? categoryExpenseBreakdown :
+                [{ category: "Food", total: 4250 }, { category: "Travel", total: 1200 }, { category: "Shopping", total: 2500 }, { category: "Bills", total: 2300 }],
+            monthlyTrends: [],
+            transactions
+        }
     });
 });
 
-// CSV Export API
-app.get('/api/export/csv', (req, res) => {
-    const userId = req.query.user_id || 1;
+// CSV Export
+app.get("/api/export/csv", async (req, res) => {
+    const userId = parseInt(req.query.user_id) || 1;
+    const [{ data: incomes }, { data: expenses }] = await Promise.all([
+        supabase.from("income").select("*").eq("user_id", userId).order("income_date", { ascending: false }),
+        supabase.from("expenses").select("*").eq("user_id", userId).order("expense_date", { ascending: false })
+    ]);
 
-    const sql = `
-        SELECT income_date as Date, 'Income' as Type, source as Title, category as Category, amount as Amount, description as Description
-        FROM income WHERE user_id = ?
-        UNION ALL
-        SELECT expense_date as Date, 'Expense' as Type, title as Title, category as Category, amount as Amount, description as Description
-        FROM expenses WHERE user_id = ?
-        ORDER BY Date DESC
-    `;
-
-    db.all(sql, [userId, userId], (err, rows) => {
-        if (err) return res.status(500).send('Error generating export');
-
-        let csv = 'Date,Type,Title,Category,Amount,Description\n';
-        rows.forEach(r => {
-            csv += `"${r.Date}","${r.Type}","${(r.Title || '').replace(/"/g, '""')}","${r.Category}","${r.Amount}","${(r.Description || '').replace(/"/g, '""')}"\n`;
-        });
-
-        res.setHeader('Content-Type', 'text/csv');
-        res.setHeader('Content-Disposition', 'attachment; filename="expense_tracker_export.csv"');
-        res.send(csv);
+    let csv = "Date,Type,Title,Category,Amount,Description\n";
+    (incomes || []).forEach(r => {
+        csv += `"${r.income_date}","Income","${(r.source || "").replace(/"/g, '""')}","${r.category}","${r.amount}","${(r.description || "").replace(/"/g, '""')}"\n`;
     });
+    (expenses || []).forEach(r => {
+        csv += `"${r.expense_date}","Expense","${(r.title || "").replace(/"/g, '""')}","${r.category}","${r.amount}","${(r.description || "").replace(/"/g, '""')}"\n`;
+    });
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", "attachment; filename=\"expense_export.csv\"");
+    res.send(csv);
 });
 
-// Serve static frontend files
-app.use(express.static(__dirname));
-app.use('/css', express.static(path.join(__dirname, 'css')));
-app.use('/js', express.static(path.join(__dirname, 'js')));
+// Health check
+app.get("/api/health", (req, res) => res.json({ status: "ok", db: "supabase", timestamp: new Date().toISOString() }));
 
-// Safe catch-all route: allow .html files, 404 only missing non-html assets
-app.use((req, res, next) => {
-    const ext = req.path.split('.').pop().toLowerCase();
-    if (req.path.includes('.') && ext !== 'html') {
-        return res.status(404).send('Asset not found');
-    }
-    res.sendFile(path.join(__dirname, 'index.html'));
+// Catch-all: serve .html files, 404 other missing assets
+app.use((req, res) => {
+    const ext = req.path.split(".").pop().toLowerCase();
+    if (req.path.includes(".") && ext !== "html") return res.status(404).send("Asset not found");
+    res.sendFile(path.join(__dirname, "index.html"));
 });
 
-// Start Server (when run standalone)
+// Start Server (local only)
 if (!process.env.VERCEL) {
-    app.listen(PORT, '0.0.0.0', () => {
-        console.log(`🚀 Smart Expense Tracker Server running at http://0.0.0.0:${PORT}`);
+    app.listen(PORT, "0.0.0.0", () => {
+        console.log(`🚀 Smart Expense Tracker running at http://0.0.0.0:${PORT}`);
     });
 }
 
