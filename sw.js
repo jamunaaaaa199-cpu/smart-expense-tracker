@@ -1,19 +1,19 @@
 // Service Worker for Smart Expense Tracker PWA
-const CACHE_NAME = 'expense-tracker-v2';
+const CACHE_NAME = 'expense-tracker-v2.2';
 const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/dashboard.html',
-  '/income.html',
-  '/expenses.html',
-  '/reports.html',
-  '/login.html',
-  '/register.html',
-  '/logout.html',
-  '/css/style.css',
-  '/js/api.js',
-  '/js/app.js',
-  '/manifest.json'
+  './',
+  './index.html',
+  './dashboard.html',
+  './income.html',
+  './expenses.html',
+  './reports.html',
+  './login.html',
+  './register.html',
+  './logout.html',
+  './css/style.css',
+  './js/api.js',
+  './js/app.js',
+  './manifest.json'
 ];
 
 self.addEventListener('install', (event) => {
@@ -41,16 +41,15 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Network first, falling back to cache
+  // Pass-through for API requests
+  if (event.request.url.includes('/api/')) {
+    return;
+  }
+
   if (event.request.method === 'GET') {
     event.respondWith(
       fetch(event.request)
-        .then((response) => {
-          return response;
-        })
-        .catch(() => {
-          return caches.match(event.request);
-        })
+        .catch(() => caches.match(event.request))
     );
   }
 });
