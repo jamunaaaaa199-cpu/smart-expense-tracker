@@ -441,6 +441,6 @@ app.use((req, res) => {
 });
 
 // Start Server
-app.listen(PORT, () => {
-    console.log(`🚀 Smart Expense Tracker Server running at http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Smart Expense Tracker Server running at http://0.0.0.0:${PORT}`);
 });

@@ -1,17 +1,21 @@
 // =========================================================
 // Smart Expense Tracker - Database Controller (SQLite3)
+// Cloud-Ready with Auto-Recovery & Seeding
 // =========================================================
 
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const fs = require('fs');
 
-const DB_PATH = path.join(__dirname, 'expense_tracker.db');
+// Use /tmp for serverless (e.g. Vercel / AWS Lambda) or local directory for regular Node servers
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_VERSION);
+const DB_PATH = process.env.DB_PATH || (isServerless ? '/tmp/expense_tracker.db' : path.join(__dirname, 'expense_tracker.db'));
 
 const db = new sqlite3.Database(DB_PATH, (err) => {
     if (err) {
         console.error('❌ Error connecting to SQLite database:', err.message);
     } else {
-        console.log('✅ Connected to SQLite database:', DB_PATH);
+        console.log('✅ Connected to SQLite database at:', DB_PATH);
     }
 });
 
@@ -80,16 +84,16 @@ function initDb() {
         // Seed Default Demo User & Transactions if table is empty
         db.get('SELECT COUNT(*) as count FROM users', (err, row) => {
             if (err) {
-                console.error('Error querying users:', err);
+                console.error('Error querying users:', err.message);
                 return;
             }
-            if (row.count === 0) {
+            if (!row || row.count === 0) {
                 console.log('🌱 Seeding default user & financial records...');
                 db.run(
-                    `INSERT INTO users (user_id, full_name, email, mobile, password) VALUES (?, ?, ?, ?, ?)`,
+                    `INSERT OR IGNORE INTO users (user_id, full_name, email, mobile, password) VALUES (?, ?, ?, ?, ?)`,
                     [1, 'Demo User', 'admin@gmail.com', '9876543210', 'admin123'],
                     function (err) {
-                        if (err) return console.error('Seed user error:', err);
+                        if (err) return console.error('Seed user error:', err.message);
 
                         // Seed Income
                         const insertIncome = db.prepare(
@@ -114,7 +118,7 @@ function initDb() {
 
                         // Seed Monthly Budget (July 2026)
                         db.run(
-                            `INSERT INTO budgets (user_id, month, year, budget_amount) VALUES (?, ?, ?, ?)`,
+                            `INSERT OR IGNORE INTO budgets (user_id, month, year, budget_amount) VALUES (?, ?, ?, ?)`,
                             [1, 7, 2026, 40000]
                         );
 
