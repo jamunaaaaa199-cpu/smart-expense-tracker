@@ -41,7 +41,7 @@ app.get("/favicon.ico", (req, res) => {
 });
 app.get("/favicon.svg", (req, res) => {
     res.setHeader("Content-Type", "image/svg+xml");
-    res.send('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="#2563eb"/><text x="50%" y="55%" dominant-baseline="central" text-anchor="middle" font-size="60">💰</text></svg>');
+    res.sendFile(path.join(__dirname, "favicon.svg"));
 });
 
 // ── Helper: safe Supabase query with fallback ─────────────
