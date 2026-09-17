@@ -460,8 +460,16 @@ app.get('/api/export/csv', (req, res) => {
     });
 });
 
-// Catch-all route to serve index.html
-app.use((req, res) => {
+// Serve static frontend files
+app.use(express.static(__dirname));
+app.use('/css', express.static(path.join(__dirname, 'css')));
+app.use('/js', express.static(path.join(__dirname, 'js')));
+
+// Safe catch-all route only for non-asset navigation
+app.use((req, res, next) => {
+    if (req.path.includes('.')) {
+        return res.status(404).send('Asset not found');
+    }
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
