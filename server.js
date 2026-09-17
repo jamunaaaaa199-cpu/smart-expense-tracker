@@ -43,6 +43,10 @@ app.get("/favicon.svg", (req, res) => {
     res.setHeader("Content-Type", "image/svg+xml");
     res.sendFile(path.join(__dirname, "favicon.svg"));
 });
+app.get("/architecture.pdf", (req, res) => {
+    res.setHeader("Content-Type", "application/pdf");
+    res.sendFile(path.join(__dirname, "Smart_Expense_Tracker_Technical_Architecture.pdf"));
+});
 
 // ── Helper: safe Supabase query with fallback ─────────────
 async function sbQuery(fn, fallback = []) {
