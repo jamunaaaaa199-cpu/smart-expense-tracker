@@ -27,7 +27,7 @@ function safeSetStorage(key, value) {
     }
 }
 
-// Generate Secure Unique IDs (Bug 3 Fix)
+// Generate Secure Unique IDs (Point 3 Fix)
 function generateUniqueId() {
     if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
         return crypto.randomUUID();
@@ -35,7 +35,7 @@ function generateUniqueId() {
     return "id_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
 }
 
-// Safe Numeric Parser (Bug 1 & 4 Fix: No string concatenation, precision-safe)
+// Safe Numeric Parser (Point 2 & 9 Fix: Precision-safe double decimal)
 function parseAmount(val) {
     const num = parseFloat(val);
     if (isNaN(num) || !isFinite(num)) return 0;
@@ -59,34 +59,33 @@ function initLocalStorage() {
 
     if (!safeGetStorage("incomes")) {
         const defaultIncomes = [
-            { income_id: "inc_1", user_id: 1, source: "Monthly Salary", category: "Salary", amount: 50000, income_date: "2026-07-01", description: "Monthly Company Salary" },
-            { income_id: "inc_2", user_id: 1, source: "Freelance Project", category: "Freelancing", amount: 8000, income_date: "2026-07-05", description: "Web Design Client Payment" },
-            { income_id: "inc_3", user_id: 1, source: "Stock Dividend", category: "Investment", amount: 2500, income_date: "2026-07-10", description: "Quarterly Dividend" },
-            { income_id: "inc_4", user_id: 1, source: "Festival Bonus", category: "Bonus", amount: 5000, income_date: "2026-07-12", description: "Mid-year performance bonus" }
+            { income_id: "inc_1", user_id: 1, source: "Monthly Salary", category: "Salary", amount: 50000.00, income_date: "2026-07-01", description: "Monthly Company Salary" },
+            { income_id: "inc_2", user_id: 1, source: "Freelance Project", category: "Freelancing", amount: 8000.00, income_date: "2026-07-05", description: "Web Design Client Payment" },
+            { income_id: "inc_3", user_id: 1, source: "Stock Dividend", category: "Investment", amount: 2500.00, income_date: "2026-07-10", description: "Quarterly Dividend" },
+            { income_id: "inc_4", user_id: 1, source: "Festival Bonus", category: "Bonus", amount: 5000.00, income_date: "2026-07-12", description: "Mid-year performance bonus" }
         ];
         safeSetStorage("incomes", defaultIncomes);
     }
 
     if (!safeGetStorage("expenses")) {
         const defaultExpenses = [
-            { expense_id: "exp_1", user_id: 1, title: "Restaurant Dinner", category: "Food", amount: 750, expense_date: "2026-07-12", description: "Family dinner" },
-            { expense_id: "exp_2", user_id: 1, title: "Bike Fuel", category: "Travel", amount: 1200, expense_date: "2026-07-11", description: "Petrol refill" },
-            { expense_id: "exp_3", user_id: 1, title: "Electricity Bill", category: "Bills", amount: 2300, expense_date: "2026-07-10", description: "Monthly EB Bill" },
-            { expense_id: "exp_4", user_id: 1, title: "Weekend Clothes", category: "Shopping", amount: 2500, expense_date: "2026-07-09", description: "Shopping mall" },
-            { expense_id: "exp_5", user_id: 1, title: "Groceries", category: "Food", amount: 3500, expense_date: "2026-07-07", description: "Supermarket monthly items" }
+            { expense_id: "exp_1", user_id: 1, title: "Restaurant Dinner", category: "Food", amount: 750.00, expense_date: "2026-07-12", description: "Family dinner" },
+            { expense_id: "exp_2", user_id: 1, title: "Bike Fuel", category: "Travel", amount: 1200.00, expense_date: "2026-07-11", description: "Petrol refill" },
+            { expense_id: "exp_3", user_id: 1, title: "Electricity Bill", category: "Bills", amount: 2300.00, expense_date: "2026-07-10", description: "Monthly EB Bill" },
+            { expense_id: "exp_4", user_id: 1, title: "Weekend Clothes", category: "Shopping", amount: 2500.00, expense_date: "2026-07-09", description: "Shopping mall" },
+            { expense_id: "exp_5", user_id: 1, title: "Groceries", category: "Food", amount: 3500.00, expense_date: "2026-07-07", description: "Supermarket monthly items" }
         ];
         safeSetStorage("expenses", defaultExpenses);
     }
 
     if (!safeGetStorage("budget")) {
-        safeSetStorage("budget", { budget_amount: 40000, month: 7, year: 2026 });
+        safeSetStorage("budget", { budget_amount: 40000.00, month: 7, year: 2026 });
     }
 }
 
 initLocalStorage();
 
 const API = {
-    // Current user session helper
     getUser() {
         return safeGetStorage("user", { user_id: 1, full_name: "Demo Admin", email: "admin@gmail.com" });
     },
@@ -103,14 +102,12 @@ const API = {
         }
     },
 
-    // Authentication
     async login(email, password) {
         initLocalStorage();
         const users = safeGetStorage("users_db", []);
         const cleanEmail = (email || "").trim().toLowerCase();
         const cleanPass = (password || "").trim();
 
-        // 1. Check local users database first
         const found = users.find(u => (u.email || "").toLowerCase() === cleanEmail && u.password === cleanPass);
         if (found) {
             const userObj = { user_id: found.user_id, full_name: found.full_name, email: found.email, mobile: found.mobile || "" };
@@ -123,14 +120,12 @@ const API = {
             return { success: true, user: userObj, message: "Login successful!" };
         }
 
-        // 2. Guaranteed Demo fallback
         if ((cleanEmail === "admin@gmail.com" && cleanPass === "admin123") || (cleanEmail === "demo@example.com" && cleanPass === "123456")) {
             const userObj = { user_id: 1, full_name: "Demo Admin", email: cleanEmail, mobile: "9876543210" };
             this.setUser(userObj);
             return { success: true, user: userObj, message: "Login successful!" };
         }
 
-        // 3. Remote API attempt
         try {
             const res = await fetch(`${API_BASE}/api/auth/login`, {
                 method: "POST",
@@ -145,7 +140,7 @@ const API = {
                 }
             }
         } catch (e) {
-            console.warn("Remote login failed, checked local records:", e);
+            console.warn("Remote login fallback to local records:", e);
         }
 
         throw new Error("Invalid email or password. Please use admin@gmail.com / admin123");
@@ -183,11 +178,9 @@ const API = {
         return { success: true, user: sessionUser, message: "Registration successful!" };
     },
 
-    // Dashboard Statistics Calculation (Explicit numeric summation, no concatenation)
     async getDashboardStats() {
         initLocalStorage();
 
-        // Attempt remote API first for live Supabase accuracy
         try {
             const user = this.getUser();
             const res = await fetch(`${API_BASE}/api/dashboard/stats?user_id=${user.user_id || 1}`);
@@ -213,7 +206,6 @@ const API = {
         const expenses = safeGetStorage("expenses", []);
         const budgetObj = safeGetStorage("budget", { budget_amount: 40000 });
 
-        // Bug 1 Fix: Explicit Number() casts prevent "100" + "200" = "100200"
         const totalIncome = parseAmount(incomes.reduce((sum, item) => sum + parseAmount(item.amount), 0));
         const totalExpense = parseAmount(expenses.reduce((sum, item) => sum + parseAmount(item.amount), 0));
         const balance = parseAmount(totalIncome - totalExpense);
@@ -237,7 +229,6 @@ const API = {
         };
     },
 
-    // Budget Target Update
     async updateBudget(budgetAmount) {
         initLocalStorage();
         const parsed = parseAmount(budgetAmount);
@@ -253,7 +244,7 @@ const API = {
         return { success: true, message: "Budget target updated successfully!" };
     },
 
-    // Income Operations
+    // Income Operations (Point 6: Add + Edit + Delete)
     async getIncome(params = {}) {
         initLocalStorage();
 
@@ -311,6 +302,24 @@ const API = {
         return { success: true, message: "Income recorded successfully!", item: newRecord };
     },
 
+    async updateIncome(id, updatedData) {
+        initLocalStorage();
+        let list = safeGetStorage("incomes", []);
+        const idx = list.findIndex(i => String(i.income_id) === String(id));
+        if (idx !== -1) {
+            list[idx] = { ...list[idx], ...updatedData, amount: parseAmount(updatedData.amount) };
+            safeSetStorage("incomes", list);
+        }
+
+        fetch(`${API_BASE}/api/income/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(updatedData)
+        }).catch(() => {});
+
+        return { success: true, message: "Income updated successfully!" };
+    },
+
     async deleteIncome(id) {
         initLocalStorage();
         let list = safeGetStorage("incomes", []);
@@ -321,7 +330,7 @@ const API = {
         return { success: true, message: "Income deleted successfully." };
     },
 
-    // Expenses Operations
+    // Expenses Operations (Point 6: Add + Edit + Delete)
     async getExpenses(params = {}) {
         initLocalStorage();
 
@@ -379,6 +388,24 @@ const API = {
         return { success: true, message: "Expense recorded successfully!", item: newRecord };
     },
 
+    async updateExpense(id, updatedData) {
+        initLocalStorage();
+        let list = safeGetStorage("expenses", []);
+        const idx = list.findIndex(e => String(e.expense_id) === String(id));
+        if (idx !== -1) {
+            list[idx] = { ...list[idx], ...updatedData, amount: parseAmount(updatedData.amount) };
+            safeSetStorage("expenses", list);
+        }
+
+        fetch(`${API_BASE}/api/expenses/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(updatedData)
+        }).catch(() => {});
+
+        return { success: true, message: "Expense updated successfully!" };
+    },
+
     async deleteExpense(id) {
         initLocalStorage();
         let list = safeGetStorage("expenses", []);
@@ -422,25 +449,25 @@ const API = {
             totalExpense: totalExp,
             netSavings: parseAmount(totalInc - totalExp),
             categoryExpenseBreakdown: categoryExpenseBreakdown.length ? categoryExpenseBreakdown : [
-                { category: "Food", total: 4250 },
-                { category: "Travel", total: 1200 },
-                { category: "Shopping", total: 2500 },
-                { category: "Bills", total: 2300 }
+                { category: "Food", total: 4250.00 },
+                { category: "Travel", total: 1200.00 },
+                { category: "Shopping", total: 2500.00 },
+                { category: "Bills", total: 2300.00 }
             ],
             monthlyTrends: [
-                { month_label: "Jan", total_income: 40000, total_expense: 25000 },
-                { month_label: "Feb", total_income: 45000, total_expense: 28000 },
-                { month_label: "Mar", total_income: 50000, total_expense: 30000 },
-                { month_label: "Apr", total_income: 47000, total_expense: 27000 },
-                { month_label: "May", total_income: 52000, total_expense: 32000 },
-                { month_label: "Jun", total_income: 50000, total_expense: 29000 },
+                { month_label: "Jan", total_income: 40000.00, total_expense: 25000.00 },
+                { month_label: "Feb", total_income: 45000.00, total_expense: 28000.00 },
+                { month_label: "Mar", total_income: 50000.00, total_expense: 30000.00 },
+                { month_label: "Apr", total_income: 47000.00, total_expense: 27000.00 },
+                { month_label: "May", total_income: 52000.00, total_expense: 32000.00 },
+                { month_label: "Jun", total_income: 50000.00, total_expense: 29000.00 },
                 { month_label: "Jul", total_income: totalInc, total_expense: totalExp }
             ],
             transactions: allTx.sort((a, b) => new Date(b.date) - new Date(a.date))
         };
     },
 
-    // CSV Download
+    // Point 11: CSV Data Export
     downloadCSV() {
         initLocalStorage();
         const incomes = safeGetStorage("incomes", []);
@@ -448,10 +475,10 @@ const API = {
 
         let csv = "Date,Type,Title,Category,Amount,Description\n";
         incomes.forEach(i => {
-            csv += `"${i.income_date}","Income","${(i.source || "").replace(/"/g, '""')}","${i.category}","${parseAmount(i.amount)}","${(i.description || "").replace(/"/g, '""')}"\n`;
+            csv += `"${i.income_date}","Income","${(i.source || "").replace(/"/g, '""')}","${i.category}","${parseAmount(i.amount).toFixed(2)}","${(i.description || "").replace(/"/g, '""')}"\n`;
         });
         expenses.forEach(e => {
-            csv += `"${e.expense_date}","Expense","${(e.title || "").replace(/"/g, '""')}","${e.category}","${parseAmount(e.amount)}","${(e.description || "").replace(/"/g, '""')}"\n`;
+            csv += `"${e.expense_date}","Expense","${(e.title || "").replace(/"/g, '""')}","${e.category}","${parseAmount(e.amount).toFixed(2)}","${(e.description || "").replace(/"/g, '""')}"\n`;
         });
 
         const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });

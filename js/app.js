@@ -57,16 +57,238 @@ function getCategoryBadge(category, type = 'Expense') {
     return `<span class="badge-category ${badgeClass}">${category || 'General'}</span>`;
 }
 
-// Format Currency with Intl.NumberFormat (Bug 4 Fix: precision & clean formatting)
+// Format Currency with Intl.NumberFormat (Point 11: Double Decimals ₹50.00)
 function formatINR(val) {
     const num = Number(val || 0);
     return new Intl.NumberFormat('en-IN', {
         style: 'currency',
         currency: 'INR',
         maximumFractionDigits: 2,
-        minimumFractionDigits: 0
+        minimumFractionDigits: 2
     }).format(num);
 }
+
+// Point 8: Smart Auto-Categorization Helper
+function setupSmartAutoCategorization(titleInputId, categorySelectId, type = 'expense') {
+    const titleInput = document.getElementById(titleInputId);
+    const categorySelect = document.getElementById(categorySelectId);
+    if (!titleInput || !categorySelect) return;
+
+    const expenseRules = [
+        { cat: 'Food', keywords: ['swiggy', 'zomato', 'restaurant', 'mcdonald', 'kfc', 'cafe', 'starbucks', 'dinner', 'lunch', 'breakfast', 'tea', 'coffee', 'pizza', 'burger', 'grocery', 'blinkit', 'zepto', 'instamart', 'supermarket', 'fruits', 'veg'] },
+        { cat: 'Travel', keywords: ['uber', 'ola', 'rapido', 'metro', 'petrol', 'diesel', 'fuel', 'flight', 'irctc', 'train', 'bus', 'auto', 'taxi', 'toll', 'parking', 'cab'] },
+        { cat: 'Shopping', keywords: ['amazon', 'flipkart', 'myntra', 'ajio', 'meesho', 'cloth', 'shirt', 'shoes', 'mall', 'zara', 'h&m', 'purchase', 'dress', 'pant'] },
+        { cat: 'Bills', keywords: ['electricity', 'water', 'wifi', 'broadband', 'airtel', 'jio', 'vi', 'recharge', 'rent', 'gas', 'cylinder', 'eb bill', 'power', 'maintenance', 'dth'] },
+        { cat: 'Entertainment', keywords: ['netflix', 'spotify', 'movie', 'cinema', 'hotstar', 'prime', 'game', 'steam', 'concert', 'theatre', 'show'] },
+        { cat: 'Healthcare', keywords: ['medicine', 'hospital', 'doctor', 'pharmacy', 'apollo', '1mg', 'clinic', 'dentist', 'lab', 'test', 'health'] },
+        { cat: 'Education', keywords: ['fee', 'tuition', 'course', 'udemy', 'coursera', 'books', 'school', 'college', 'exam'] }
+    ];
+
+    const incomeRules = [
+        { cat: 'Salary', keywords: ['salary', 'payroll', 'wages', 'stipend', 'bonus', 'paycheck'] },
+        { cat: 'Business', keywords: ['client', 'freelance', 'project', 'invoice', 'sale', 'consulting', 'customer', 'contract'] },
+        { cat: 'Investments', keywords: ['dividend', 'mutual fund', 'stock', 'crypto', 'interest', 'shares', 'trading', 'profit', 'equity'] }
+    ];
+
+    const rules = type === 'income' ? incomeRules : expenseRules;
+
+    titleInput.addEventListener('input', (e) => {
+        const text = e.target.value.toLowerCase().trim();
+        if (!text) return;
+        
+        for (const rule of rules) {
+            const matched = rule.keywords.some(kw => text.includes(kw));
+            if (matched) {
+                const options = Array.from(categorySelect.options);
+                const foundOpt = options.find(opt => opt.value.toLowerCase() === rule.cat.toLowerCase());
+                if (foundOpt && categorySelect.value !== foundOpt.value) {
+                    categorySelect.value = foundOpt.value;
+                    categorySelect.classList.add('border-primary', 'shadow-sm');
+                    setTimeout(() => categorySelect.classList.remove('border-primary', 'shadow-sm'), 1200);
+                }
+                break;
+            }
+        }
+    });
+}
+
+// Point 9: AI Spending Velocity & Month-End Projection Engine
+function renderSmartAIInsights(stats, containerId = 'smartAIInsightsContainer') {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const now = new Date();
+    const currentDay = Math.max(now.getDate(), 1);
+    const totalDaysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const remainingDays = Math.max(totalDaysInMonth - currentDay, 0);
+
+    const totalExpense = Number(stats.totalExpense || 0);
+    const budgetAmount = Number(stats.budgetAmount || 40000);
+    const dailyVelocity = totalExpense / currentDay;
+    const projectedSpend = totalExpense + (dailyVelocity * remainingDays);
+    const projectedRatio = budgetAmount > 0 ? (projectedSpend / budgetAmount) * 100 : 0;
+
+    let healthBadge = '';
+    let healthColor = '';
+    let healthAdvice = '';
+
+    if (projectedRatio > 100) {
+        healthBadge = '⚠️ High Velocity - Overspend Projected';
+        healthColor = 'border-danger bg-danger-subtle text-danger-emphasis';
+        const over = projectedSpend - budgetAmount;
+        healthAdvice = `At your current velocity of <strong>${formatINR(dailyVelocity)}/day</strong>, your projected expenditure will reach <strong>${formatINR(projectedSpend)}</strong> by month-end, exceeding your target budget by <strong>${formatINR(over)}</strong>. Reduce discretionary shopping and dining.`;
+    } else if (projectedRatio > 80) {
+        healthBadge = '⚡ Moderate Pace - Near Limit';
+        healthColor = 'border-warning bg-warning-subtle text-warning-emphasis';
+        healthAdvice = `You are spending an average of <strong>${formatINR(dailyVelocity)}/day</strong>. Projected month-end spend is <strong>${formatINR(projectedSpend)}</strong> (${Math.round(projectedRatio)}% of budget). Monitor upcoming subscriptions and bills.`;
+    } else {
+        healthBadge = '✨ Healthy Spending Pace';
+        healthColor = 'border-success bg-success-subtle text-success-emphasis';
+        healthAdvice = `Great financial discipline! Your daily velocity of <strong>${formatINR(dailyVelocity)}/day</strong> puts your projected month-end total at <strong>${formatINR(projectedSpend)}</strong>, safely within your <strong>${formatINR(budgetAmount)}</strong> target.`;
+    }
+
+    container.innerHTML = `
+        <div class="card card-modern border ${healthColor} mb-4 shadow-sm">
+            <div class="card-body p-3 p-md-4">
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="fs-4">🤖</span>
+                        <h6 class="fw-bold mb-0">Smart AI Financial Velocity & Forecasting</h6>
+                    </div>
+                    <span class="badge ${projectedRatio > 100 ? 'bg-danger' : projectedRatio > 80 ? 'bg-warning text-dark' : 'bg-success'} px-3 py-2 rounded-pill">
+                        ${healthBadge}
+                    </span>
+                </div>
+                <p class="small mb-3 text-secondary">${healthAdvice}</p>
+                <div class="row g-2 text-center pt-2 border-top">
+                    <div class="col-4">
+                        <div class="small text-muted">Daily Burn Rate</div>
+                        <div class="fw-bold text-dark">${formatINR(dailyVelocity)}<span class="small text-muted">/day</span></div>
+                    </div>
+                    <div class="col-4">
+                        <div class="small text-muted">Month-End Projection</div>
+                        <div class="fw-bold ${projectedRatio > 100 ? 'text-danger' : 'text-primary'}">${formatINR(projectedSpend)}</div>
+                    </div>
+                    <div class="col-4">
+                        <div class="small text-muted">Days Left in Month</div>
+                        <div class="fw-bold text-dark">${remainingDays} days</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Point 6: Universal Transaction Edit Modal (Income & Expenses)
+window.openEditTransactionModal = function({ type, item, onSave }) {
+    let modalEl = document.getElementById('editTransactionModal');
+    if (!modalEl) {
+        const modalHtml = `
+            <div class="modal fade" id="editTransactionModal" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content border-0 shadow-lg rounded-4">
+                        <div class="modal-header bg-primary text-white">
+                            <h5 class="modal-title fw-bold" id="editModalTitle">✏️ Edit Record</h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body p-4">
+                            <form id="editTransactionForm">
+                                <input type="hidden" id="editItemId">
+                                <input type="hidden" id="editItemType">
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold" id="editTitleLabel">Title *</label>
+                                    <input type="text" id="editTitleInput" class="form-control" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Category *</label>
+                                    <select id="editCategorySelect" class="form-select" required></select>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Amount (₹) *</label>
+                                    <input type="number" id="editAmountInput" class="form-control" step="0.01" min="0.01" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Date *</label>
+                                    <input type="date" id="editDateInput" class="form-control" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Description / Notes</label>
+                                    <textarea id="editDescInput" class="form-control" rows="2"></textarea>
+                                </div>
+                                <div class="d-flex justify-content-end gap-2">
+                                    <button type="button" class="btn btn-outline-secondary px-3" data-bs-dismiss="modal">Cancel</button>
+                                    <button type="submit" class="btn btn-primary px-4 fw-semibold" id="saveEditBtn">Save Changes</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        modalEl = document.getElementById('editTransactionModal');
+    }
+
+    const isIncome = type === 'income';
+    document.getElementById('editModalTitle').innerHTML = isIncome ? '✏️ Edit Income Entry' : '✏️ Edit Expense Record';
+    document.getElementById('editTitleLabel').textContent = isIncome ? 'Income Source *' : 'Expense Title *';
+    document.getElementById('editItemId').value = item.income_id || item.expense_id || item.id;
+    document.getElementById('editItemType').value = type;
+    document.getElementById('editTitleInput').value = isIncome ? (item.source || '') : (item.title || '');
+    document.getElementById('editAmountInput').value = item.amount;
+    
+    const today = new Date().toISOString().split('T')[0];
+    const dateInput = document.getElementById('editDateInput');
+    dateInput.max = today;
+    dateInput.value = (isIncome ? item.income_date : item.expense_date) || today;
+    document.getElementById('editDescInput').value = item.description || '';
+
+    const catSelect = document.getElementById('editCategorySelect');
+    const categories = isIncome 
+        ? ['Salary', 'Freelance', 'Business', 'Investments', 'Gift', 'Rental', 'Other']
+        : ['Food', 'Travel', 'Shopping', 'Bills', 'Healthcare', 'Entertainment', 'Education', 'Others'];
+    
+    catSelect.innerHTML = categories.map(c => `<option value="${c}" ${c.toLowerCase() === (item.category || '').toLowerCase() ? 'selected' : ''}>${c}</option>`).join('');
+
+    const form = document.getElementById('editTransactionForm');
+    const newForm = form.cloneNode(true);
+    form.parentNode.replaceChild(newForm, form);
+
+    newForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const titleVal = document.getElementById('editTitleInput').value.trim();
+        const catVal = document.getElementById('editCategorySelect').value;
+        const amtVal = parseFloat(document.getElementById('editAmountInput').value);
+        const dateVal = document.getElementById('editDateInput').value;
+        const descVal = document.getElementById('editDescInput').value.trim();
+
+        if (!titleVal) {
+            showToast('Title / Source cannot be empty or spaces.', 'warning');
+            return;
+        }
+        if (isNaN(amtVal) || amtVal <= 0) {
+            showToast('Amount must be greater than ₹0.00.', 'warning');
+            return;
+        }
+        if (dateVal > today) {
+            showToast('Transaction date cannot be in the future.', 'warning');
+            return;
+        }
+
+        const id = document.getElementById('editItemId').value;
+        const updatedData = isIncome 
+            ? { source: titleVal, category: catVal, amount: amtVal, income_date: dateVal, description: descVal }
+            : { title: titleVal, category: catVal, amount: amtVal, expense_date: dateVal, description: descVal };
+
+        const bsModal = bootstrap.Modal.getInstance(modalEl);
+        if (bsModal) bsModal.hide();
+
+        await onSave(id, updatedData);
+    });
+
+    const bsModal = new bootstrap.Modal(modalEl);
+    bsModal.show();
+};
 
 // Common UI (active navbar, mobile bottom navigation, user greeting)
 function setupCommonUI() {
@@ -317,6 +539,9 @@ async function initDashboard() {
         // Render 4-Stage Warning Alerts
         renderBudgetAlerts(stats.spentPercent, stats.totalExpense, stats.budgetAmount, 'budgetAlertContainer');
 
+        // Render Point 9: Smart AI Financial Velocity & Forecasting
+        renderSmartAIInsights(stats, 'smartAIInsightsContainer');
+
         if (txTableBody) {
             if (!stats.recentTransactions || stats.recentTransactions.length === 0) {
                 txTableBody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-4">No recent transactions recorded.</td></tr>`;
@@ -359,6 +584,9 @@ async function initIncomePage() {
         if (!dateInput.value) dateInput.value = today;
     }
 
+    // Point 8: Smart Auto-Categorization for Income
+    setupSmartAutoCategorization('incomeSource', 'incomeCategory', 'income');
+
     async function loadIncomeList() {
         const search = searchInput ? searchInput.value.trim() : '';
         const category = categorySelect ? categorySelect.value : '';
@@ -389,7 +617,10 @@ async function initIncomePage() {
                 <td>${getCategoryBadge(item.category, 'Income')}</td>
                 <td class="text-success fw-bold">+ ${formatINR(item.amount)}</td>
                 <td>
-                    <button class="btn btn-sm btn-outline-danger btn-action" onclick="handleDeleteIncome('${item.income_id || index}')" title="Delete">
+                    <button class="btn btn-sm btn-outline-primary btn-action me-1" onclick="handleEditIncome('${item.income_id || index}')" title="Edit Entry">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger btn-action" onclick="handleDeleteIncome('${item.income_id || index}')" title="Delete Entry">
                         <i class="bi bi-trash"></i>
                     </button>
                 </td>
@@ -406,7 +637,7 @@ async function initIncomePage() {
             const income_date = document.getElementById('incomeDate')?.value;
             const description = document.getElementById('incomeDescription')?.value.trim() || '';
 
-            // Strict Validation checks (Audit Section 2)
+            // Strict Validation checks (Point 2, 3, 4)
             if (!source) {
                 showToast('Please enter a valid income source.', 'warning');
                 return;
@@ -414,12 +645,12 @@ async function initIncomePage() {
 
             const parsedAmount = parseFloat(amountVal);
             if (isNaN(parsedAmount) || parsedAmount <= 0) {
-                showToast('Income amount must be greater than ₹0.', 'warning');
+                showToast('Income amount must be greater than ₹0.00.', 'warning');
                 return;
             }
 
             if (!category || category === 'Select Category' || category === 'All') {
-                showToast('Please select a category.', 'warning');
+                showToast('Please select a valid income category.', 'warning');
                 return;
             }
 
@@ -443,10 +674,34 @@ async function initIncomePage() {
     if (searchInput) searchInput.addEventListener('input', () => loadIncomeList());
     if (categorySelect) categorySelect.addEventListener('change', () => loadIncomeList());
 
+    // Point 6: Edit Income Handler
+    window.handleEditIncome = async function(id) {
+        const items = await API.getIncome();
+        const item = items.find(i => String(i.income_id) === String(id) || String(i.id) === String(id));
+        if (!item) {
+            showToast('Income record not found.', 'error');
+            return;
+        }
+        openEditTransactionModal({
+            type: 'income',
+            item,
+            onSave: async (savedId, data) => {
+                try {
+                    await API.updateIncome(savedId, data);
+                    showToast('Income entry updated successfully!', 'success');
+                    loadIncomeList();
+                } catch (err) {
+                    showToast('Failed to update income.', 'error');
+                }
+            }
+        });
+    };
+
+    // Point 5: Delete Confirmation
     window.handleDeleteIncome = async function(id) {
-        if (confirm('Are you sure you want to delete this income entry?')) {
+        if (confirm('Are you sure you want to permanently delete this income entry?')) {
             await API.deleteIncome(id);
-            showToast('Income deleted successfully.');
+            showToast('Income entry deleted successfully.');
             loadIncomeList();
         }
     };
@@ -469,6 +724,9 @@ async function initExpensesPage() {
         dateInput.max = today;
         if (!dateInput.value) dateInput.value = today;
     }
+
+    // Point 8: Smart Auto-Categorization for Expenses
+    setupSmartAutoCategorization('expenseTitle', 'expenseCategory', 'expense');
 
     async function loadExpenseList() {
         const search = searchInput ? searchInput.value.trim() : '';
@@ -506,7 +764,10 @@ async function initExpensesPage() {
                 <td class="text-danger fw-bold">- ${formatINR(item.amount)}</td>
                 <td class="text-muted small">${item.description || '-'}</td>
                 <td>
-                    <button class="btn btn-sm btn-outline-danger btn-action" onclick="handleDeleteExpense('${item.expense_id || index}')" title="Delete">
+                    <button class="btn btn-sm btn-outline-primary btn-action me-1" onclick="handleEditExpense('${item.expense_id || index}')" title="Edit Expense">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger btn-action" onclick="handleDeleteExpense('${item.expense_id || index}')" title="Delete Expense">
                         <i class="bi bi-trash"></i>
                     </button>
                 </td>
@@ -523,7 +784,7 @@ async function initExpensesPage() {
             const expense_date = document.getElementById('expenseDate')?.value;
             const description = document.getElementById('expenseDescription')?.value.trim() || '';
 
-            // Strict Validation checks (Audit Section 2)
+            // Strict Validation checks (Point 2, 3, 4)
             if (!title) {
                 showToast('Please enter a valid expense title.', 'warning');
                 return;
@@ -531,12 +792,12 @@ async function initExpensesPage() {
 
             const parsedAmount = parseFloat(amountVal);
             if (isNaN(parsedAmount) || parsedAmount <= 0) {
-                showToast('Expense amount must be greater than ₹0.', 'warning');
+                showToast('Expense amount must be greater than ₹0.00.', 'warning');
                 return;
             }
 
             if (!category || category === 'Select Category' || category === 'All') {
-                showToast('Please select a category.', 'warning');
+                showToast('Please select a valid expense category.', 'warning');
                 return;
             }
 
@@ -560,10 +821,34 @@ async function initExpensesPage() {
     if (searchInput) searchInput.addEventListener('input', () => loadExpenseList());
     if (categorySelect) categorySelect.addEventListener('change', () => loadExpenseList());
 
+    // Point 6: Edit Expense Handler
+    window.handleEditExpense = async function(id) {
+        const items = await API.getExpenses();
+        const item = items.find(e => String(e.expense_id) === String(id) || String(e.id) === String(id));
+        if (!item) {
+            showToast('Expense record not found.', 'error');
+            return;
+        }
+        openEditTransactionModal({
+            type: 'expense',
+            item,
+            onSave: async (savedId, data) => {
+                try {
+                    await API.updateExpense(savedId, data);
+                    showToast('Expense record updated successfully!', 'success');
+                    loadExpenseList();
+                } catch (err) {
+                    showToast('Failed to update expense.', 'error');
+                }
+            }
+        });
+    };
+
+    // Point 5: Delete Confirmation
     window.handleDeleteExpense = async function(id) {
         if (confirm('Are you sure you want to permanently delete this expense record?')) {
             await API.deleteExpense(id);
-            showToast('Expense record deleted.');
+            showToast('Expense record deleted successfully.');
             loadExpenseList();
         }
     };
@@ -596,6 +881,9 @@ async function initReportsPage() {
 
         if (totalIncomeEl) totalIncomeEl.innerText = formatINR(data.totalIncome);
         if (totalExpenseEl) totalExpenseEl.innerText = formatINR(data.totalExpense);
+        // Render Point 9: Smart AI Financial Velocity in Reports
+        renderSmartAIInsights({ totalExpense: data.totalExpense, budgetAmount: 40000 }, 'reportAIInsightsContainer');
+
         if (netSavingsEl) {
             netSavingsEl.innerText = formatINR(data.netSavings);
             netSavingsEl.className = data.netSavings >= 0 ? 'text-primary' : 'text-danger';
