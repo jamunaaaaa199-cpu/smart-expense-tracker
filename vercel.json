@@ -2,6 +2,14 @@
   "version": 2,
   "rewrites": [
     {
+      "source": "/favicon.ico",
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/favicon.svg",
+      "destination": "/api/index.js"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/index.js"
     },
