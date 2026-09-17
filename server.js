@@ -357,7 +357,17 @@ app.get("/api/health", async (req, res) => {
     res.json({ status: "ok", db: error ? "error" : "supabase", timestamp: new Date().toISOString() });
 });
 
-// Catch-all
+// Dedicated Clean Navigation Routes
+app.get("/dashboard", (req, res) => res.sendFile(path.join(__dirname, "dashboard.html")));
+app.get("/income", (req, res) => res.sendFile(path.join(__dirname, "income.html")));
+app.get("/expenses", (req, res) => res.sendFile(path.join(__dirname, "expenses.html")));
+app.get("/expense", (req, res) => res.sendFile(path.join(__dirname, "expenses.html")));
+app.get("/reports", (req, res) => res.sendFile(path.join(__dirname, "reports.html")));
+app.get("/login", (req, res) => res.sendFile(path.join(__dirname, "login.html")));
+app.get("/register", (req, res) => res.sendFile(path.join(__dirname, "register.html")));
+app.get("/logout", (req, res) => res.sendFile(path.join(__dirname, "logout.html")));
+
+// Catch-all: serve index.html only for root or unknown SPA paths, 404 for missing static assets
 app.use((req, res) => {
     const ext = req.path.split(".").pop().toLowerCase();
     if (req.path.includes(".") && ext !== "html") return res.status(404).send("Asset not found");

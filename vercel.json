@@ -1,1 +1,14 @@
-{"version":2,"rewrites":[{"source":"/api/(.*)","destination":"/api/index.js"}]}
+﻿{
+  "version": 2,
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index.js" },
+    { "source": "/dashboard", "destination": "/dashboard.html" },
+    { "source": "/income", "destination": "/income.html" },
+    { "source": "/expenses", "destination": "/expenses.html" },
+    { "source": "/expense", "destination": "/expenses.html" },
+    { "source": "/reports", "destination": "/reports.html" },
+    { "source": "/login", "destination": "/login.html" },
+    { "source": "/register", "destination": "/register.html" },
+    { "source": "/logout", "destination": "/logout.html" }
+  ]
+}

@@ -684,6 +684,9 @@ async function initReportsPage() {
 // =========================================================
 function initLoginPage() {
     const form = document.getElementById('loginForm');
+    const loginBtn = document.getElementById('loginBtn');
+    const loginIcon = document.getElementById('loginIcon');
+    const loginText = document.getElementById('loginText');
     if (!form) return;
 
     form.addEventListener('submit', async (e) => {
@@ -691,14 +694,25 @@ function initLoginPage() {
         const email = document.getElementById('email').value.trim();
         const password = document.getElementById('password').value.trim();
 
+        if (loginBtn) {
+            loginBtn.disabled = true;
+            if (loginIcon) loginIcon.className = 'spinner-border spinner-border-sm me-2';
+            if (loginText) loginText.textContent = 'Signing in...';
+        }
+
         try {
             await API.login(email, password);
-            showToast('Login Successful! Redirecting...', 'success');
+            showToast('Login Successful! Redirecting to Dashboard...', 'success');
             setTimeout(() => {
                 window.location.href = 'dashboard.html';
-            }, 800);
+            }, 500);
         } catch (err) {
             showToast(err.message || 'Invalid Email or Password', 'error');
+            if (loginBtn) {
+                loginBtn.disabled = false;
+                if (loginIcon) loginIcon.className = 'bi bi-box-arrow-in-right me-1';
+                if (loginText) loginText.textContent = 'Sign In';
+            }
         }
     });
 }
