@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#2563eb">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>Expense Management | Smart Expense Tracker</title>
+
+    <link rel="manifest" href="manifest.json">
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar navbar-expand-lg navbar-dark navbar-custom sticky-top">
+    <div class="container">
+        <a class="navbar-brand" href="dashboard.html">
+            <span>💰</span> Smart Expense Tracker
+        </a>
+
+        <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navbarMenu">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="collapse navbar-collapse" id="navbarMenu">
+            <ul class="navbar-nav ms-auto align-items-lg-center">
+                <li class="nav-item"><a class="nav-link" href="index.html">Home</a></li>
+                <li class="nav-item"><a class="nav-link" href="dashboard.html">Dashboard</a></li>
+                <li class="nav-item"><a class="nav-link" href="income.html">Income</a></li>
+                <li class="nav-item"><a class="nav-link active" href="expenses.html">Expenses</a></li>
+                <li class="nav-item"><a class="nav-link" href="reports.html">Reports</a></li>
+                <li class="nav-item ms-lg-3">
+                    <a class="nav-link logout-btn" href="logout.html" title="Sign Out">
+                        <i class="bi bi-box-arrow-right me-1"></i> Logout
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>
+
+<!-- Main Container -->
+<main class="main-content py-4">
+    <div class="container">
+        <!-- Budget Alert Warning Box (50%, 75%, 90%, 100%) -->
+        <div id="budgetAlertContainer"></div>
+
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h3 class="fw-bold mb-1 text-danger">
+                    <i class="bi bi-cash-stack me-2"></i>Expense Management
+                </h3>
+                <p class="text-muted mb-0">Record and review all your daily expenditures and bills.</p>
+            </div>
+            <a href="dashboard.html" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-arrow-left me-1"></i> Dashboard
+            </a>
+        </div>
+
+        <div class="row g-4">
+            <!-- Left: Add Expense Form -->
+            <div class="col-lg-4">
+                <div class="card card-modern">
+                    <div class="card-header-modern bg-danger text-white">
+                        <span class="fw-bold"><i class="bi bi-dash-circle me-1"></i> Add New Expense</span>
+                    </div>
+                    <div class="card-body p-3">
+                        <form id="expenseForm">
+                            <div class="mb-3">
+                                <label class="form-label small fw-semibold">Expense Title *</label>
+                                <input type="text" id="expenseTitle" class="form-control" 
+                                       placeholder="e.g. Lunch, Groceries, Fuel" required>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label small fw-semibold">Category *</label>
+                                <select id="expenseCategory" class="form-select" required>
+                                    <option value="">Select Category</option>
+                                    <option value="Food">Food & Dining</option>
+                                    <option value="Travel">Travel & Fuel</option>
+                                    <option value="Shopping">Shopping & Clothes</option>
+                                    <option value="Bills">Bills & Utilities</option>
+                                    <option value="Education">Education</option>
+                                    <option value="Healthcare">Healthcare</option>
+                                    <option value="Entertainment">Entertainment</option>
+                                    <option value="Others">Others</option>
+                                </select>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label small fw-semibold">Amount (₹) *</label>
+                                <input type="number" id="expenseAmount" class="form-control" 
+                                       placeholder="e.g. 750" min="1" step="any" required>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label small fw-semibold">Date *</label>
+                                <input type="date" id="expenseDate" class="form-control" required>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label small fw-semibold">Description (Optional)</label>
+                                <textarea id="expenseDescription" class="form-control" rows="2" 
+                                          placeholder="Notes or merchant details..."></textarea>
+                            </div>
+
+                            <button type="submit" class="btn btn-danger w-100 fw-semibold py-2">
+                                <i class="bi bi-plus-circle me-1"></i> Record Expense
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Expense List -->
+            <div class="col-lg-8">
+                <div class="card card-modern">
+                    <div class="card-header-modern bg-white">
+                        <div class="fw-bold">Expense History</div>
+                        <div class="d-flex gap-2">
+                            <input type="text" id="searchExpense" class="form-control form-control-sm" 
+                                   placeholder="Search expense..." style="max-width: 180px;">
+                            <select id="filterExpenseCategory" class="form-select form-select-sm" style="max-width: 140px;">
+                                <option value="All">All Categories</option>
+                                <option value="Food">Food</option>
+                                <option value="Travel">Travel</option>
+                                <option value="Shopping">Shopping</option>
+                                <option value="Bills">Bills</option>
+                                <option value="Education">Education</option>
+                                <option value="Healthcare">Healthcare</option>
+                                <option value="Entertainment">Entertainment</option>
+                                <option value="Others">Others</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-custom">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Date</th>
+                                    <th>Title</th>
+                                    <th>Category</th>
+                                    <th>Amount</th>
+                                    <th>Description</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="expenseTableBody">
+                                <tr>
+                                    <td colspan="7" class="text-center text-muted py-4">Loading expense records...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<!-- Mobile Bottom App Bar -->
+<div class="mobile-bottom-nav">
+    <a href="dashboard.html" class="mobile-nav-item">
+        <i class="bi bi-speedometer2"></i>
+        <span>Dashboard</span>
+    </a>
+    <a href="income.html" class="mobile-nav-item">
+        <i class="bi bi-wallet2"></i>
+        <span>Income</span>
+    </a>
+    <a href="expenses.html" class="mobile-nav-item active">
+        <i class="bi bi-cart-dash"></i>
+        <span>Expenses</span>
+    </a>
+    <a href="reports.html" class="mobile-nav-item">
+        <i class="bi bi-pie-chart"></i>
+        <span>Reports</span>
+    </a>
+    <a href="logout.html" class="mobile-nav-item">
+        <i class="bi bi-person"></i>
+        <span>Logout</span>
+    </a>
+</div>
+
+<!-- Footer -->
+<footer class="footer-custom text-center d-none d-md-block">
+    <div class="container">
+        <p class="mb-0">© 2026 Smart Expense Tracker</p>
+    </div>
+</footer>
+
+<!-- Scripts -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
