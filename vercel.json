@@ -3,11 +3,11 @@
   "rewrites": [
     {
       "source": "/favicon.ico",
-      "destination": "/api/index.js"
+      "destination": "/favicon.ico"
     },
     {
       "source": "/favicon.svg",
-      "destination": "/api/index.js"
+      "destination": "/favicon.svg"
     },
     {
       "source": "/architecture.pdf",

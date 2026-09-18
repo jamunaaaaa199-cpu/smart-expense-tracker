@@ -622,7 +622,7 @@ async function initDashboard() {
 
         if (txTableBody) {
             if (!stats.recentTransactions || stats.recentTransactions.length === 0) {
-                txTableBody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-4">No recent transactions recorded.</td></tr>`;
+                txTableBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-4">No recent transactions recorded.</td></tr>`;
             } else {
                 txTableBody.innerHTML = stats.recentTransactions.map(tx => `
                     <tr>
@@ -637,6 +637,14 @@ async function initDashboard() {
                                 ${tx.type}
                             </span>
                         </td>
+                        <td class="text-end text-nowrap">
+                            <button class="btn btn-sm btn-outline-primary btn-action me-1" onclick="handleEditRecent('${tx.id}', '${tx.type}')" title="Edit ${tx.type}">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger btn-action" onclick="handleDeleteRecent('${tx.id}', '${tx.type}')" title="Delete ${tx.type}">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </td>
                     </tr>
                 `).join('');
             }
@@ -645,6 +653,68 @@ async function initDashboard() {
         console.error('Failed to load dashboard:', err);
     }
 }
+
+// Handler for Editing Recent Transactions directly from Dashboard
+window.handleEditRecent = async function(id, type) {
+    if (type === 'Income') {
+        const items = await API.getIncome();
+        const item = items.find(i => String(i.income_id) === String(id) || String(i.id) === String(id));
+        if (!item) {
+            showToast('Income record not found.', 'error');
+            return;
+        }
+        openEditTransactionModal({
+            type: 'income',
+            item,
+            onSave: async (savedId, data) => {
+                try {
+                    await API.updateIncome(savedId, data);
+                    showToast('Income entry updated successfully!', 'success');
+                    initDashboardPage();
+                } catch (err) {
+                    showToast('Failed to update income.', 'error');
+                }
+            }
+        });
+    } else {
+        const items = await API.getExpenses();
+        const item = items.find(e => String(e.expense_id) === String(id) || String(e.id) === String(id));
+        if (!item) {
+            showToast('Expense record not found.', 'error');
+            return;
+        }
+        openEditTransactionModal({
+            type: 'expense',
+            item,
+            onSave: async (savedId, data) => {
+                try {
+                    await API.updateExpense(savedId, data);
+                    showToast('Expense record updated successfully!', 'success');
+                    initDashboardPage();
+                } catch (err) {
+                    showToast('Failed to update expense.', 'error');
+                }
+            }
+        });
+    }
+};
+
+// Handler for Deleting Recent Transactions directly from Dashboard
+window.handleDeleteRecent = async function(id, type) {
+    window.showDeleteConfirmation(`Are you sure you want to permanently delete this ${type.toLowerCase()} record?`, async () => {
+        try {
+            if (type === 'Income') {
+                await API.deleteIncome(id);
+            } else {
+                await API.deleteExpense(id);
+            }
+            showToast(`${type} record deleted successfully.`);
+            initDashboardPage();
+        } catch (err) {
+            showToast(`Failed to delete ${type.toLowerCase()}.`, 'error');
+        }
+    });
+};
 
 // =========================================================
 // INCOME PAGE

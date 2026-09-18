@@ -1,9 +1,13 @@
-﻿// =========================================================
+// =========================================================
 // Smart Expense Tracker - Robust Client State & API Service
 // Safe Deserialization, Strong Numeric Typing & Supabase Sync
 // =========================================================
 
-const API_BASE = window.location.origin;
+const API_BASE = (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"))
+    ? window.location.origin 
+    : ((typeof window !== "undefined" && window.location.origin.includes("vercel.app")) 
+        ? window.location.origin 
+        : "https://expenseflow-app-alpha.vercel.app");
 
 // Safe Storage Helpers (Zero-Crash Guard)
 function safeGetStorage(key, fallback = null) {
