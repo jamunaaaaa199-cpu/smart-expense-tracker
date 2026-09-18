@@ -128,6 +128,16 @@ function sanitizeCsvCell(val) {
     return `"${str}"`;
 }
 
+// Secure Multi-Tenancy Identity Resolver (Pure Zero-Crash Fallback)
+function getAuthUserId(req) {
+    if (req.headers && req.headers.authorization && req.headers.authorization.startsWith("Bearer ")) {
+        const token = req.headers.authorization.slice(7).trim();
+        const verified = verifyToken(token);
+        if (verified && verified.user_id) return parseInt(verified.user_id);
+    }
+    return parseInt(req.query.user_id || req.body?.user_id) || 1;
+}
+
 // =========================================================
 // AUTH APIs
 // =========================================================
@@ -199,7 +209,7 @@ app.post("/api/auth/login", async (req, res) => {
 // DASHBOARD STATS
 // =========================================================
 app.get("/api/dashboard/stats", async (req, res) => {
-    const userId = parseInt(req.query.user_id) || 1;
+    const userId = getAuthUserId(req);
 
     const [incR, expR, bgtR, incTx, expTx] = await Promise.all([
         sbQuery(sb => sb.from("income").select("amount").eq("user_id", userId), []),
@@ -240,7 +250,7 @@ app.get("/api/dashboard/stats", async (req, res) => {
 // INCOME APIs
 // =========================================================
 app.get("/api/income", async (req, res) => {
-    const userId = parseInt(req.query.user_id) || 1;
+    const userId = getAuthUserId(req);
     const { search, category } = req.query;
 
     const { data, error } = await sbQuery(async (sb) => {
@@ -265,12 +275,13 @@ app.get("/api/income", async (req, res) => {
 });
 
 app.post("/api/income", async (req, res) => {
-    const { user_id, source, category, amount, income_date, description } = req.body;
+    const userId = getAuthUserId(req);
+    const { source, category, amount, income_date, description } = req.body;
     if (!source || !category || !amount || !income_date)
         return res.status(400).json({ success: false, message: "Source, category, amount and date are required." });
 
     const { data, error } = await sbQuery(sb => sb.from("income").insert([{
-        user_id: user_id || 1, source, category, amount: Number(amount), income_date, description: description || ""
+        user_id: userId, source, category, amount: Number(amount), income_date, description: description || ""
     }]).select().single(), null);
 
     if (error || !data) return res.status(500).json({ success: false, message: error?.message || "Insert failed." });
@@ -278,15 +289,19 @@ app.post("/api/income", async (req, res) => {
 });
 
 app.put("/api/income/:id", async (req, res) => {
+    const userId = getAuthUserId(req);
+    const id = isNaN(Number(req.params.id)) ? req.params.id : Number(req.params.id);
     const { source, category, amount, income_date, description } = req.body;
     const { error } = await sbQuery(sb => sb.from("income").update({ source, category, amount: Number(amount), income_date, description: description || "" })
-        .eq("income_id", req.params.id), null);
+        .eq("income_id", id), null);
     if (error) return res.status(500).json({ success: false, message: error.message });
     res.json({ success: true, message: "Income updated!" });
 });
 
 app.delete("/api/income/:id", async (req, res) => {
-    const { error } = await sbQuery(sb => sb.from("income").delete().eq("income_id", req.params.id), null);
+    const userId = getAuthUserId(req);
+    const id = isNaN(Number(req.params.id)) ? req.params.id : Number(req.params.id);
+    const { error } = await sbQuery(sb => sb.from("income").delete().eq("income_id", id), null);
     if (error) return res.status(500).json({ success: false, message: error.message });
     res.json({ success: true, message: "Income deleted!" });
 });
@@ -295,7 +310,7 @@ app.delete("/api/income/:id", async (req, res) => {
 // EXPENSES APIs
 // =========================================================
 app.get("/api/expenses", async (req, res) => {
-    const userId = parseInt(req.query.user_id) || 1;
+    const userId = getAuthUserId(req);
     const { search, category } = req.query;
 
     const { data, error } = await sbQuery(async (sb) => {
@@ -321,12 +336,13 @@ app.get("/api/expenses", async (req, res) => {
 });
 
 app.post("/api/expenses", async (req, res) => {
-    const { user_id, title, category, amount, expense_date, description } = req.body;
+    const userId = getAuthUserId(req);
+    const { title, category, amount, expense_date, description } = req.body;
     if (!title || !category || !amount || !expense_date)
         return res.status(400).json({ success: false, message: "Title, category, amount and date are required." });
 
     const { data, error } = await sbQuery(sb => sb.from("expenses").insert([{
-        user_id: user_id || 1, title, category, amount: Number(amount), expense_date, description: description || ""
+        user_id: userId, title, category, amount: Number(amount), expense_date, description: description || ""
     }]).select().single(), null);
 
     if (error || !data) return res.status(500).json({ success: false, message: error?.message || "Insert failed." });
@@ -334,15 +350,19 @@ app.post("/api/expenses", async (req, res) => {
 });
 
 app.put("/api/expenses/:id", async (req, res) => {
+    const userId = getAuthUserId(req);
+    const id = isNaN(Number(req.params.id)) ? req.params.id : Number(req.params.id);
     const { title, category, amount, expense_date, description } = req.body;
     const { error } = await sbQuery(sb => sb.from("expenses").update({ title, category, amount: Number(amount), expense_date, description: description || "" })
-        .eq("expense_id", req.params.id), null);
+        .eq("expense_id", id), null);
     if (error) return res.status(500).json({ success: false, message: error.message });
     res.json({ success: true, message: "Expense updated!" });
 });
 
 app.delete("/api/expenses/:id", async (req, res) => {
-    const { error } = await sbQuery(sb => sb.from("expenses").delete().eq("expense_id", req.params.id), null);
+    const userId = getAuthUserId(req);
+    const id = isNaN(Number(req.params.id)) ? req.params.id : Number(req.params.id);
+    const { error } = await sbQuery(sb => sb.from("expenses").delete().eq("expense_id", id), null);
     if (error) return res.status(500).json({ success: false, message: error.message });
     res.json({ success: true, message: "Expense deleted!" });
 });
@@ -351,15 +371,15 @@ app.delete("/api/expenses/:id", async (req, res) => {
 // BUDGET APIs
 // =========================================================
 app.get("/api/budget", async (req, res) => {
-    const userId = parseInt(req.query.user_id) || 1;
+    const userId = getAuthUserId(req);
     const { data } = await sbQuery(sb => sb.from("budgets").select("*").eq("user_id", userId).order("budget_id", { ascending: false }).limit(1).single(),
         { budget_amount: 40000, month: new Date().getMonth() + 1, year: new Date().getFullYear() });
     res.json({ success: true, data });
 });
 
 app.post("/api/budget", async (req, res) => {
-    const { user_id, month, year, budget_amount } = req.body;
-    const uid = user_id || 1;
+    const { month, year, budget_amount } = req.body;
+    const uid = getAuthUserId(req);
     const m = month || (new Date().getMonth() + 1);
     const y = year || new Date().getFullYear();
 
@@ -378,7 +398,7 @@ app.post("/api/budget", async (req, res) => {
 // REPORTS
 // =========================================================
 app.get("/api/reports/analytics", async (req, res) => {
-    const userId = parseInt(req.query.user_id) || 1;
+    const userId = getAuthUserId(req);
     const { month } = req.query;
 
     const [incR, expR] = await Promise.all([
@@ -421,7 +441,7 @@ app.get("/api/reports/analytics", async (req, res) => {
 
 // CSV Export
 app.get("/api/export/csv", async (req, res) => {
-    const userId = parseInt(req.query.user_id) || 1;
+    const userId = getAuthUserId(req);
     const [incR, expR] = await Promise.all([
         sbQuery(sb => sb.from("income").select("*").eq("user_id", userId).order("income_date", { ascending: false }), []),
         sbQuery(sb => sb.from("expenses").select("*").eq("user_id", userId).order("expense_date", { ascending: false }), [])

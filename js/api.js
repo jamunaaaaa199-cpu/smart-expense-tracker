@@ -122,9 +122,25 @@ const API = {
         safeSetStorage("user", user);
     },
 
+    getToken() {
+        return safeGetStorage("auth_token", null);
+    },
+
+    setToken(token) {
+        if (token) safeSetStorage("auth_token", token);
+    },
+
+    getAuthHeaders() {
+        const token = this.getToken();
+        const headers = { "Content-Type": "application/json" };
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+        return headers;
+    },
+
     logout() {
         try {
             localStorage.removeItem("user");
+            localStorage.removeItem("auth_token");
         } catch (e) {
             console.warn("Storage clear error:", e);
         }
@@ -144,13 +160,18 @@ const API = {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email: cleanEmail, password: cleanPass })
-            }).catch(() => {});
+            }).then(r => r.json()).then(d => { if (d.token) this.setToken(d.token); }).catch(() => {});
             return { success: true, user: userObj, message: "Login successful!" };
         }
 
         if ((cleanEmail === "demo@example.com" && cleanPass === "admin123") || (cleanEmail === "demo@example.com" && cleanPass === "123456")) {
             const userObj = { user_id: 1, full_name: "Demo Admin", email: cleanEmail, mobile: "9876543210" };
             this.setUser(userObj);
+            fetch(`${API_BASE}/api/auth/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: cleanEmail, password: cleanPass })
+            }).then(r => r.json()).then(d => { if (d.token) this.setToken(d.token); }).catch(() => {});
             return { success: true, user: userObj, message: "Login successful!" };
         }
 
@@ -164,6 +185,7 @@ const API = {
                 const data = await res.json();
                 if (data.success && data.user) {
                     this.setUser(data.user);
+                    if (data.token) this.setToken(data.token);
                     return data;
                 }
             }

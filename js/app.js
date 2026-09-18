@@ -457,7 +457,7 @@ function renderBudgetAlerts(spentPercent, totalExpense, budgetAmount, containerI
                     </div>
                     <div class="d-flex flex-wrap gap-2">
                         <span class="alert-stat-badge">Consumed: ${spentPercent}%</span>
-                        <span class="alert-stat-badge">Remaining Balance: ₹0</span>
+                        <span class="alert-stat-badge ${overspent > 0 ? 'bg-danger text-white' : ''}">${overspent > 0 ? `Overspent: -${formatINR(overspent)}` : 'Remaining Balance: ₹0.00'}</span>
                         <button class="btn btn-sm btn-light py-0 px-2 fw-bold" onclick="openBudgetModal()">
                             <i class="bi bi-pencil-square me-1"></i> Adjust Budget Limit
                         </button>
@@ -496,7 +496,7 @@ function renderBudgetAlerts(spentPercent, totalExpense, budgetAmount, containerI
                         <span>STAGE 2 WARNING: 75% Budget Limit Consumed</span>
                     </div>
                     <div class="alert-desc">
-                        Caution: You have crossed the <strong>75%</strong> milestone of your spending allowance. 
+                        Caution: You have crossed the <strong>${spentPercent}%</strong> milestone of your spending allowance. 
                         Consider slowing down non-essential expenses. Safe remaining balance: <strong>${formatINR(remaining)}</strong>.
                     </div>
                     <div class="d-flex flex-wrap gap-2">
@@ -516,7 +516,7 @@ function renderBudgetAlerts(spentPercent, totalExpense, budgetAmount, containerI
                         <span>STAGE 1 NOTICE: 50% Halfway Spending Milestone</span>
                     </div>
                     <div class="alert-desc">
-                        You have utilized <strong>50%</strong> of your monthly financial budget. 
+                        You have utilized <strong>${spentPercent}%</strong> of your monthly financial budget. 
                         You have <strong>${formatINR(remaining)}</strong> remaining safe spend for the rest of the period.
                     </div>
                     <div class="d-flex flex-wrap gap-2">
@@ -567,13 +567,35 @@ window.openBudgetModal = function() {
 
         document.getElementById('budgetSettingForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const val = document.getElementById('inputNewBudget').value;
-            if (val && Number(val) > 0) {
-                await API.updateBudget(Number(val));
+            const val = parseFloat(document.getElementById('inputNewBudget').value);
+            if (isNaN(val) || val <= 0) {
+                showToast('Budget must be a positive number greater than ₹0.00.', 'warning');
+                return;
+            }
+            if (val > 10000000.00) {
+                showToast('Budget target cannot exceed ₹10,000,000.00.', 'warning');
+                return;
+            }
+
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
+            }
+
+            try {
+                await API.updateBudget(val);
                 showToast('Budget target updated successfully!');
                 const bsModal = bootstrap.Modal.getInstance(modalEl);
                 if (bsModal) bsModal.hide();
                 initDashboard();
+            } catch (err) {
+                showToast('Failed to update budget.', 'error');
+            } finally {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = 'Save Budget Target';
+                }
             }
         });
     }
@@ -1220,6 +1242,11 @@ function initRegisterPage() {
         const mobile = document.getElementById('mobile').value.trim();
         const password = document.getElementById('password').value;
         const confirmPassword = document.getElementById('confirmPassword').value;
+
+        if (password.length < 6) {
+            showToast('PIN / Password must be at least 6 characters!', 'error');
+            return;
+        }
 
         if (password !== confirmPassword) {
             showToast('Passwords do not match!', 'error');
