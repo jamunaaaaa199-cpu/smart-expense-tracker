@@ -11,7 +11,7 @@
     },
     {
       "source": "/architecture.pdf",
-      "destination": "/api/index.js"
+      "destination": "/Smart_Expense_Tracker_Technical_Architecture.pdf"
     },
     {
       "source": "/api/(.*)",
@@ -48,6 +48,19 @@
     {
       "source": "/logout",
       "destination": "/logout.html"
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "type": "service",
+        "service": "smart-expense-tracker"
+      }
     }
-  ]
+  ],
+  "services": {
+    "smart-expense-tracker": {
+      "root": ".",
+      "entrypoint": "server.js"
+    }
+  }
 }

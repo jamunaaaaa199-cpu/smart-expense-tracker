@@ -95,7 +95,7 @@
                         <span class="input-group-text bg-light border-end-0">
                             <i class="bi bi-telephone text-muted"></i>
                         </span>
-                        <input type="tel" id="mobile" class="form-control border-start-0 ps-0" 
+                        <input type="text" id="mobile" class="form-control border-start-0 ps-0" 
                                placeholder="9876543210" required>
                     </div>
                 </div>
@@ -103,23 +103,23 @@
 
             <div class="row g-2 mb-3">
                 <div class="col-sm-6">
-                    <label class="form-label fw-semibold small text-secondary">Password</label>
+                    <label class="form-label fw-semibold small text-secondary">Access PIN / Key</label>
                     <div class="input-group">
                         <span class="input-group-text bg-light border-end-0">
-                            <i class="bi bi-lock text-muted"></i>
+                            <i class="bi bi-key text-muted"></i>
                         </span>
-                        <input type="password" id="password" class="form-control border-start-0 ps-0" 
-                               placeholder="Create password" required minlength="4">
+                        <input type="text" id="password" class="form-control border-start-0 ps-0" 
+                               placeholder="Create PIN" style="-webkit-text-security: disc;" required minlength="4">
                     </div>
                 </div>
                 <div class="col-sm-6">
-                    <label class="form-label fw-semibold small text-secondary">Confirm Password</label>
+                    <label class="form-label fw-semibold small text-secondary">Confirm PIN</label>
                     <div class="input-group">
                         <span class="input-group-text bg-light border-end-0">
-                            <i class="bi bi-shield-lock text-muted"></i>
+                            <i class="bi bi-shield-check text-muted"></i>
                         </span>
-                        <input type="password" id="confirmPassword" class="form-control border-start-0 ps-0" 
-                               placeholder="Repeat password" required minlength="4">
+                        <input type="text" id="confirmPassword" class="form-control border-start-0 ps-0" 
+                               placeholder="Repeat PIN" style="-webkit-text-security: disc;" required minlength="4">
                     </div>
                 </div>
             </div>
