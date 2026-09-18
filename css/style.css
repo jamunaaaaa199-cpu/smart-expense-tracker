@@ -729,4 +729,34 @@ main, .main-content {
     box-shadow: none !important;
     border: 1px solid #cbd5e1 !important;
   }
+  tr {
+    page-break-inside: avoid;
+  }
+}
+
+/* Accessibility & WCAG 2.1 AA Compliance Rules */
+.btn-action {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  font-size: 0.95rem;
+  border-radius: 8px;
+  touch-action: manipulation;
+}
+
+.badge-warning-aa {
+  background-color: #fef3c7 !important;
+  color: #92400e !important;
+  border: 1px solid #fde68a !important;
+  font-weight: 600;
+}
+
+.alert-stage-50 .alert-title {
+  color: #92400e !important;
+}
+.alert-stage-50 .alert-desc {
+  color: #78350f !important;
 }

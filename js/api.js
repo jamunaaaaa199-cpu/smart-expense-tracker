@@ -39,11 +39,35 @@ function generateUniqueId() {
     return "id_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
 }
 
-// Safe Numeric Parser (Point 2 & 9 Fix: Precision-safe double decimal)
+// Integer Paise Math Helpers (Zero Floating-Point IEEE 754 Drift)
+function toPaise(val) {
+    const num = parseFloat(val);
+    if (isNaN(num) || !isFinite(num)) return 0;
+    return Math.round(num * 100);
+}
+
+function fromPaise(paise) {
+    return Number((paise / 100).toFixed(2));
+}
+
+const MAX_TRANSACTION_AMOUNT = 10000000.00; // ₹10,000,000.00 maximum boundary
+
+// Safe Numeric Parser with Double-Decimal Paise Precision & Max Bound
 function parseAmount(val) {
     const num = parseFloat(val);
     if (isNaN(num) || !isFinite(num)) return 0;
-    return Math.round(num * 100) / 100;
+    const clamped = Math.max(0, Math.min(num, MAX_TRANSACTION_AMOUNT));
+    return fromPaise(toPaise(clamped));
+}
+
+// Disarm CSV Formula Injection
+function sanitizeCsvCell(val) {
+    if (val === null || val === undefined) return '""';
+    let str = String(val).replace(/"/g, '""');
+    if (/^[=+\-@\t\r]/.test(str)) {
+        str = "'" + str;
+    }
+    return `"${str}"`;
 }
 
 // Initialize Default Seed Data safely
@@ -479,10 +503,10 @@ const API = {
 
         let csv = "Date,Type,Title,Category,Amount,Description\n";
         incomes.forEach(i => {
-            csv += `"${i.income_date}","Income","${(i.source || "").replace(/"/g, '""')}","${i.category}","${parseAmount(i.amount).toFixed(2)}","${(i.description || "").replace(/"/g, '""')}"\n`;
+            csv += `${sanitizeCsvCell(i.income_date)},"Income",${sanitizeCsvCell(i.source)},${sanitizeCsvCell(i.category)},"${parseAmount(i.amount).toFixed(2)}",${sanitizeCsvCell(i.description)}\n`;
         });
         expenses.forEach(e => {
-            csv += `"${e.expense_date}","Expense","${(e.title || "").replace(/"/g, '""')}","${e.category}","${parseAmount(e.amount).toFixed(2)}","${(e.description || "").replace(/"/g, '""')}"\n`;
+            csv += `${sanitizeCsvCell(e.expense_date)},"Expense",${sanitizeCsvCell(e.title)},${sanitizeCsvCell(e.category)},"${parseAmount(e.amount).toFixed(2)}",${sanitizeCsvCell(e.description)}\n`;
         });
 
         const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });

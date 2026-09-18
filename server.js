@@ -6,6 +6,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
+const crypto = require("crypto");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -66,6 +67,67 @@ async function sbQuery(fn, fallback = []) {
     }
 }
 
+// ── Cryptographic Password & Session Helpers (Pure Node Zero-Crash) ──
+function hashPassword(password) {
+    const salt = crypto.randomBytes(16).toString("hex");
+    const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, "sha512").toString("hex");
+    return `${salt}:${hash}`;
+}
+
+function verifyPassword(password, stored) {
+    if (!stored || !password) return false;
+    if (!stored.includes(":")) {
+        return stored === password; // Backward compatibility for pre-seeded demo accounts
+    }
+    try {
+        const [salt, originalHash] = stored.split(":");
+        const hashToVerify = crypto.pbkdf2Sync(password, salt, 100000, 64, "sha512").toString("hex");
+        return crypto.timingSafeEqual(Buffer.from(originalHash, "hex"), Buffer.from(hashToVerify, "hex"));
+    } catch {
+        return false;
+    }
+}
+
+const JWT_SECRET = process.env.JWT_SECRET || "smart-expense-tracker-enterprise-secret-key-2026";
+
+function generateToken(user) {
+    const payload = Buffer.from(JSON.stringify({
+        user_id: user.user_id,
+        email: user.email,
+        exp: Date.now() + (7 * 24 * 60 * 60 * 1000)
+    })).toString("base64url");
+    const sig = crypto.createHmac("sha256", JWT_SECRET).update(payload).digest("base64url");
+    return `${payload}.${sig}`;
+}
+
+function verifyToken(token) {
+    if (!token) return null;
+    try {
+        const parts = token.split(".");
+        if (parts.length !== 2) return null;
+        const [payload, sig] = parts;
+        const expectedSig = crypto.createHmac("sha256", JWT_SECRET).update(payload).digest("base64url");
+        if (sig.length !== expectedSig.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) {
+            return null;
+        }
+        const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf-8"));
+        if (data.exp && data.exp < Date.now()) return null;
+        return data;
+    } catch {
+        return null;
+    }
+}
+
+// Disarm CSV Formula Injection
+function sanitizeCsvCell(val) {
+    if (val === null || val === undefined) return '""';
+    let str = String(val).replace(/"/g, '""');
+    if (/^[=+\-@\t\r]/.test(str)) {
+        str = "'" + str;
+    }
+    return `"${str}"`;
+}
+
 // =========================================================
 // AUTH APIs
 // =========================================================
@@ -75,18 +137,28 @@ app.post("/api/auth/register", async (req, res) => {
         return res.status(400).json({ success: false, message: "Please provide all required fields." });
 
     const cleanEmail = (email || "").trim().toLowerCase();
+    const cleanPass = (password || "").trim();
+    if (cleanPass.length < 6) {
+        return res.status(400).json({ success: false, message: "Password must be at least 6 characters." });
+    }
+
     const { data: existing } = await sbQuery(sb => sb.from("users").select("user_id").eq("email", cleanEmail).single(), null);
     if (existing) return res.status(400).json({ success: false, message: "Email already registered." });
 
+    const secureHashedPassword = hashPassword(cleanPass);
     const { data, error } = await sbQuery(sb => sb.from("users").insert([{
         full_name: full_name.trim(), email: cleanEmail,
-        mobile: mobile || "", password: password.trim()
+        mobile: mobile || "", password: secureHashedPassword
     }]).select().single(), null);
 
     if (error || !data) return res.status(500).json({ success: false, message: error?.message || "Registration failed." });
+    
+    const userPayload = { user_id: data.user_id, full_name: data.full_name, email: data.email, mobile: data.mobile };
+    const token = generateToken(userPayload);
     return res.status(201).json({
         success: true, message: "User registered successfully!",
-        user: { user_id: data.user_id, full_name: data.full_name, email: data.email, mobile: data.mobile }
+        user: userPayload,
+        token
     });
 });
 
@@ -100,9 +172,11 @@ app.post("/api/auth/login", async (req, res) => {
 
     if ((cleanEmail === "demo@example.com" && cleanPass === "admin123") ||
         (cleanEmail === "demo@example.com" && cleanPass === "123456")) {
+        const demoUser = { user_id: 1, full_name: "Demo Admin", email: cleanEmail, mobile: "9876543210" };
         return res.json({
             success: true, message: "Login successful!",
-            user: { user_id: 1, full_name: "Demo Admin", email: cleanEmail, mobile: "9876543210" }
+            user: demoUser,
+            token: generateToken(demoUser)
         });
     }
 
@@ -110,12 +184,14 @@ app.post("/api/auth/login", async (req, res) => {
         .select("user_id,full_name,email,mobile,password")
         .eq("email", cleanEmail).single(), null);
 
-    if (!user || user.password !== cleanPass)
+    if (!user || !verifyPassword(cleanPass, user.password))
         return res.status(401).json({ success: false, message: "Invalid email or password." });
 
+    const userPayload = { user_id: user.user_id, full_name: user.full_name, email: user.email, mobile: user.mobile };
     return res.json({
         success: true, message: "Login successful!",
-        user: { user_id: user.user_id, full_name: user.full_name, email: user.email, mobile: user.mobile }
+        user: userPayload,
+        token: generateToken(userPayload)
     });
 });
 
@@ -353,10 +429,10 @@ app.get("/api/export/csv", async (req, res) => {
 
     let csv = "Date,Type,Title,Category,Amount,Description\n";
     (incR.data || []).forEach(r => {
-        csv += `"${r.income_date}","Income","${(r.source||"").replace(/"/g,'""')}","${r.category}","${r.amount}","${(r.description||"").replace(/"/g,'""')}"\n`;
+        csv += `${sanitizeCsvCell(r.income_date)},"Income",${sanitizeCsvCell(r.source)},${sanitizeCsvCell(r.category)},"${Number(r.amount || 0).toFixed(2)}",${sanitizeCsvCell(r.description)}\n`;
     });
     (expR.data || []).forEach(r => {
-        csv += `"${r.expense_date}","Expense","${(r.title||"").replace(/"/g,'""')}","${r.category}","${r.amount}","${(r.description||"").replace(/"/g,'""')}"\n`;
+        csv += `${sanitizeCsvCell(r.expense_date)},"Expense",${sanitizeCsvCell(r.title)},${sanitizeCsvCell(r.category)},"${Number(r.amount || 0).toFixed(2)}",${sanitizeCsvCell(r.description)}\n`;
     });
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", "attachment; filename=\"expense_export.csv\"");

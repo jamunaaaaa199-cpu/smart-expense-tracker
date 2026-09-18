@@ -66,14 +66,32 @@ window.showDeleteConfirmation = function(message, onConfirm) {
     btn.parentNode.replaceChild(newBtn, btn);
 
     newBtn.addEventListener('click', async () => {
-        const bsModal = bootstrap.Modal.getInstance(modalEl);
-        if (bsModal) bsModal.hide();
-        await onConfirm();
+        newBtn.disabled = true;
+        newBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Deleting...';
+        try {
+            await onConfirm();
+            const bsModal = bootstrap.Modal.getInstance(modalEl);
+            if (bsModal) bsModal.hide();
+        } finally {
+            newBtn.disabled = false;
+            newBtn.innerHTML = '<i class="bi bi-trash-fill me-1"></i> Yes, Delete';
+        }
     });
 
     const bsModal = new bootstrap.Modal(modalEl);
     bsModal.show();
 };
+
+// Bulletproof HTML Entity Escaping (Zero-XSS Protection)
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
 
 // =========================================================
 // Smart Expense Tracker - Master UI & Application Controller
@@ -348,6 +366,10 @@ window.openEditTransactionModal = function({ type, item, onSave }) {
             showToast('Amount must be greater than ₹0.00.', 'warning');
             return;
         }
+        if (amtVal > 10000000.00) {
+            showToast('Amount cannot exceed ₹10,000,000.00.', 'warning');
+            return;
+        }
         if (dateVal > today) {
             showToast('Transaction date cannot be in the future.', 'warning');
             return;
@@ -358,10 +380,22 @@ window.openEditTransactionModal = function({ type, item, onSave }) {
             ? { source: titleVal, category: catVal, amount: amtVal, income_date: dateVal, description: descVal }
             : { title: titleVal, category: catVal, amount: amtVal, expense_date: dateVal, description: descVal };
 
-        const bsModal = bootstrap.Modal.getInstance(modalEl);
-        if (bsModal) bsModal.hide();
+        const submitBtn = newForm.querySelector('button[type="submit"]');
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
+        }
 
-        await onSave(id, updatedData);
+        try {
+            await onSave(id, updatedData);
+            const bsModal = bootstrap.Modal.getInstance(modalEl);
+            if (bsModal) bsModal.hide();
+        } finally {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i> Save Changes';
+            }
+        }
     });
 
     const bsModal = new bootstrap.Modal(modalEl);
@@ -626,22 +660,22 @@ async function initDashboard() {
             } else {
                 txTableBody.innerHTML = stats.recentTransactions.map(tx => `
                     <tr>
-                        <td><strong>${tx.date}</strong></td>
-                        <td>${getCategoryBadge(tx.category, tx.type)}</td>
-                        <td>${tx.title}</td>
+                        <td><strong>${escapeHtml(tx.date)}</strong></td>
+                        <td>${getCategoryBadge(escapeHtml(tx.category), escapeHtml(tx.type))}</td>
+                        <td>${escapeHtml(tx.title)}</td>
                         <td class="${tx.type === 'Income' ? 'text-success fw-bold' : 'text-danger fw-bold'}">
                             ${tx.type === 'Income' ? '+' : '-'} ${formatINR(tx.amount)}
                         </td>
                         <td>
                             <span class="badge ${tx.type === 'Income' ? 'bg-success' : 'bg-danger'}">
-                                ${tx.type}
+                                ${escapeHtml(tx.type)}
                             </span>
                         </td>
                         <td class="text-end text-nowrap">
-                            <button class="btn btn-sm btn-outline-primary btn-action me-1" onclick="handleEditRecent('${tx.id}', '${tx.type}')" title="Edit ${tx.type}">
+                            <button class="btn btn-sm btn-outline-primary btn-action me-1" onclick="handleEditRecent('${escapeHtml(tx.id)}', '${escapeHtml(tx.type)}')" title="Edit ${escapeHtml(tx.type)}" aria-label="Edit ${escapeHtml(tx.type)}">
                                 <i class="bi bi-pencil"></i>
                             </button>
-                            <button class="btn btn-sm btn-outline-danger btn-action" onclick="handleDeleteRecent('${tx.id}', '${tx.type}')" title="Delete ${tx.type}">
+                            <button class="btn btn-sm btn-outline-danger btn-action" onclick="handleDeleteRecent('${escapeHtml(tx.id)}', '${escapeHtml(tx.type)}')" title="Delete ${escapeHtml(tx.type)}" aria-label="Delete ${escapeHtml(tx.type)}">
                                 <i class="bi bi-trash"></i>
                             </button>
                         </td>
@@ -760,15 +794,15 @@ async function initIncomePage() {
         tableBody.innerHTML = items.map((item, index) => `
             <tr>
                 <td>${index + 1}</td>
-                <td><strong>${item.income_date}</strong></td>
-                <td>${item.source}</td>
-                <td>${getCategoryBadge(item.category, 'Income')}</td>
+                <td><strong>${escapeHtml(item.income_date)}</strong></td>
+                <td>${escapeHtml(item.source)}</td>
+                <td>${getCategoryBadge(escapeHtml(item.category), 'Income')}</td>
                 <td class="text-success fw-bold">+ ${formatINR(item.amount)}</td>
                 <td>
-                    <button class="btn btn-sm btn-outline-primary btn-action me-1" onclick="handleEditIncome('${item.income_id || index}')" title="Edit Entry">
+                    <button class="btn btn-sm btn-outline-primary btn-action me-1" onclick="handleEditIncome('${escapeHtml(item.income_id || index)}')" title="Edit Entry" aria-label="Edit Income Entry">
                         <i class="bi bi-pencil"></i>
                     </button>
-                    <button class="btn btn-sm btn-outline-danger btn-action" onclick="handleDeleteIncome('${item.income_id || index}')" title="Delete Entry">
+                    <button class="btn btn-sm btn-outline-danger btn-action" onclick="handleDeleteIncome('${escapeHtml(item.income_id || index)}')" title="Delete Entry" aria-label="Delete Income Entry">
                         <i class="bi bi-trash"></i>
                     </button>
                 </td>
@@ -799,6 +833,11 @@ async function initIncomePage() {
             if (isNaN(parsedAmount) || parsedAmount <= 0) {
                 if (amtEl) amtEl.classList.add('is-invalid');
                 showToast('Income amount must be a positive number greater than ₹0.00.', 'warning');
+                return;
+            }
+            if (parsedAmount > 10000000.00) {
+                if (amtEl) amtEl.classList.add('is-invalid');
+                showToast('Income amount cannot exceed ₹10,000,000.00.', 'warning');
                 return;
             }
             if (amtEl) amtEl.classList.remove('is-invalid');
@@ -912,16 +951,16 @@ async function initExpensesPage() {
         tableBody.innerHTML = items.map((item, index) => `
             <tr>
                 <td>${index + 1}</td>
-                <td><strong>${item.expense_date}</strong></td>
-                <td>${item.title}</td>
-                <td>${getCategoryBadge(item.category, 'Expense')}</td>
+                <td><strong>${escapeHtml(item.expense_date)}</strong></td>
+                <td>${escapeHtml(item.title)}</td>
+                <td>${getCategoryBadge(escapeHtml(item.category), 'Expense')}</td>
                 <td class="text-danger fw-bold">- ${formatINR(item.amount)}</td>
-                <td class="text-muted small">${item.description || '-'}</td>
+                <td class="text-muted small">${escapeHtml(item.description || '-')}</td>
                 <td>
-                    <button class="btn btn-sm btn-outline-primary btn-action me-1" onclick="handleEditExpense('${item.expense_id || index}')" title="Edit Expense">
+                    <button class="btn btn-sm btn-outline-primary btn-action me-1" onclick="handleEditExpense('${escapeHtml(item.expense_id || index)}')" title="Edit Expense" aria-label="Edit Expense">
                         <i class="bi bi-pencil"></i>
                     </button>
-                    <button class="btn btn-sm btn-outline-danger btn-action" onclick="handleDeleteExpense('${item.expense_id || index}')" title="Delete Expense">
+                    <button class="btn btn-sm btn-outline-danger btn-action" onclick="handleDeleteExpense('${escapeHtml(item.expense_id || index)}')" title="Delete Expense" aria-label="Delete Expense">
                         <i class="bi bi-trash"></i>
                     </button>
                 </td>
@@ -952,6 +991,11 @@ async function initExpensesPage() {
             if (isNaN(parsedAmount) || parsedAmount <= 0) {
                 if (amtExpEl) amtExpEl.classList.add('is-invalid');
                 showToast('Expense amount must be a positive number greater than ₹0.00.', 'warning');
+                return;
+            }
+            if (parsedAmount > 10000000.00) {
+                if (amtExpEl) amtExpEl.classList.add('is-invalid');
+                showToast('Expense amount cannot exceed ₹10,000,000.00.', 'warning');
                 return;
             }
             if (amtExpEl) amtExpEl.classList.remove('is-invalid');
@@ -1108,10 +1152,10 @@ async function initReportsPage() {
             } else {
                 tableBody.innerHTML = data.transactions.map(t => `
                     <tr>
-                        <td><strong>${t.date}</strong></td>
-                        <td><span class="badge ${t.type === 'Income' ? 'bg-success' : 'bg-danger'}">${t.type}</span></td>
-                        <td>${t.title}</td>
-                        <td>${getCategoryBadge(t.category, t.type)}</td>
+                        <td><strong>${escapeHtml(t.date)}</strong></td>
+                        <td><span class="badge ${t.type === 'Income' ? 'bg-success' : 'bg-danger'}">${escapeHtml(t.type)}</span></td>
+                        <td>${escapeHtml(t.title)}</td>
+                        <td>${getCategoryBadge(escapeHtml(t.category), escapeHtml(t.type))}</td>
                         <td class="${t.type === 'Income' ? 'text-success fw-bold' : 'text-danger fw-bold'}">
                             ${t.type === 'Income' ? '+' : '-'} ${formatINR(t.amount)}
                         </td>
