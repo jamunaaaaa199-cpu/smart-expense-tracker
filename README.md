@@ -3,9 +3,9 @@
 A full-stack, cross-platform personal finance management system engineered with **Node.js, Express, SQLite3, Bootstrap 5, Chart.js**, and an intelligent **4-Stage Budget Warning System (50%, 75%, 90%, 100%)**.
 
 ### 🌐 Live Production Deployments
-* **Primary Live App (GitHub Pages - Clean SSL):** [https://jamunaaaaa199-cpu.github.io/smart-expense-tracker/](https://jamunaaaaa199-cpu.github.io/smart-expense-tracker/)
-* **Vercel Mirror:** [https://smart-expense-tracker-omega-teal.vercel.app/](https://smart-expense-tracker-omega-teal.vercel.app/)
-* **Technical Architecture PDF:** [Download / View PDF](https://jamunaaaaa199-cpu.github.io/smart-expense-tracker/Smart_Expense_Tracker_Technical_Architecture.pdf)
+* **Primary Live App (Fresh Cloud Domain - Zero Warnings):** [https://expenseflow-app-alpha.vercel.app/](https://expenseflow-app-alpha.vercel.app/)
+* **Official GitHub Pages Mirror:** [https://jamunaaaaa199-cpu.github.io/smart-expense-tracker/](https://jamunaaaaa199-cpu.github.io/smart-expense-tracker/)
+* **Technical Architecture PDF:** [https://expenseflow-app-alpha.vercel.app/architecture.pdf](https://expenseflow-app-alpha.vercel.app/architecture.pdf)
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/jamunaaaaa199-cpu/smart-expense-tracker)
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/jamunaaaaa199-cpu/smart-expense-tracker)
