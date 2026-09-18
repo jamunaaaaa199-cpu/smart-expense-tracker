@@ -49,11 +49,11 @@ CREATE TABLE IF NOT EXISTS budgets (
 );
 
 -- =========================================================
--- SEED DEMO DATA (admin@gmail.com / admin123)
+-- SEED DEMO DATA (demo@example.com / admin123)
 -- =========================================================
 
 INSERT INTO users (user_id, full_name, email, mobile, password)
-VALUES (1, 'Demo Admin', 'admin@gmail.com', '9876543210', 'admin123')
+VALUES (1, 'Demo Admin', 'demo@example.com', '9876543210', 'admin123')
 ON CONFLICT (email) DO NOTHING;
 
 INSERT INTO users (user_id, full_name, email, mobile, password)

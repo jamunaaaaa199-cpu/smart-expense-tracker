@@ -46,14 +46,14 @@ function parseAmount(val) {
 function initLocalStorage() {
     if (!safeGetStorage("users_db")) {
         const defaultUsers = [
-            { user_id: 1, full_name: "Demo Admin", email: "admin@gmail.com", password: "admin123", mobile: "9876543210" },
+            { user_id: 1, full_name: "Demo Admin", email: "demo@example.com", password: "admin123", mobile: "9876543210" },
             { user_id: 2, full_name: "Demo User", email: "demo@example.com", password: "123456", mobile: "9123456780" }
         ];
         safeSetStorage("users_db", defaultUsers);
     }
 
     if (!safeGetStorage("user")) {
-        const defaultUser = { user_id: 1, full_name: "Demo Admin", email: "admin@gmail.com", mobile: "9876543210" };
+        const defaultUser = { user_id: 1, full_name: "Demo Admin", email: "demo@example.com", mobile: "9876543210" };
         safeSetStorage("user", defaultUser);
     }
 
@@ -87,7 +87,7 @@ initLocalStorage();
 
 const API = {
     getUser() {
-        return safeGetStorage("user", { user_id: 1, full_name: "Demo Admin", email: "admin@gmail.com" });
+        return safeGetStorage("user", { user_id: 1, full_name: "Demo Admin", email: "demo@example.com" });
     },
 
     setUser(user) {
@@ -120,7 +120,7 @@ const API = {
             return { success: true, user: userObj, message: "Login successful!" };
         }
 
-        if ((cleanEmail === "admin@gmail.com" && cleanPass === "admin123") || (cleanEmail === "demo@example.com" && cleanPass === "123456")) {
+        if ((cleanEmail === "demo@example.com" && cleanPass === "admin123") || (cleanEmail === "demo@example.com" && cleanPass === "123456")) {
             const userObj = { user_id: 1, full_name: "Demo Admin", email: cleanEmail, mobile: "9876543210" };
             this.setUser(userObj);
             return { success: true, user: userObj, message: "Login successful!" };
@@ -143,7 +143,7 @@ const API = {
             console.warn("Remote login fallback to local records:", e);
         }
 
-        throw new Error("Invalid email or password. Please use admin@gmail.com / admin123");
+        throw new Error("Invalid email or password. Please use demo@example.com / admin123");
     },
 
     async register(full_name, email, mobile, password) {

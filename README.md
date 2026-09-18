@@ -37,7 +37,7 @@ http://localhost:3000
 ```
 
 ### Default Demo Credentials:
-* **Email:** `admin@gmail.com`
+* **Email:** `demo@example.com`
 * **Password:** `admin123`
 
 ---

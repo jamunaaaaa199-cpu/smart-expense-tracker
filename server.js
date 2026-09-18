@@ -98,7 +98,7 @@ app.post("/api/auth/login", async (req, res) => {
     const cleanEmail = (email || "").trim().toLowerCase();
     const cleanPass = (password || "").trim();
 
-    if ((cleanEmail === "admin@gmail.com" && cleanPass === "admin123") ||
+    if ((cleanEmail === "demo@example.com" && cleanPass === "admin123") ||
         (cleanEmail === "demo@example.com" && cleanPass === "123456")) {
         return res.json({
             success: true, message: "Login successful!",

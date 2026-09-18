@@ -7,8 +7,8 @@ const ASSETS_TO_CACHE = [
   './income.html',
   './expenses.html',
   './reports.html',
-  './login.html',
-  './register.html',
+  
+  
   './logout.html',
   './css/style.css',
   './js/api.js',

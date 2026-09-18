@@ -14,7 +14,7 @@ const supabase = createClient(
 const DEMO_USER = {
     user_id: 1,
     full_name: "Demo Admin",
-    email: "admin@gmail.com",
+    email: "demo@example.com",
     mobile: "9876543210",
     password: "admin123"
 };
