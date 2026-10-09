@@ -227,12 +227,17 @@ function renderSmartAIInsights(stats, containerId = 'smartAIInsightsContainer') 
     let healthBadge = '';
     let healthColor = '';
     let healthAdvice = '';
+    const isEarlyMonth = currentDay <= 3;
 
     if (projectedRatio > 100) {
         healthBadge = '⚠️ High Velocity - Overspend Projected';
         healthColor = 'border-danger bg-danger-subtle text-danger-emphasis';
         const over = projectedSpend - budgetAmount;
-        healthAdvice = `At your current velocity of <strong>${formatINR(dailyVelocity)}/day</strong>, your projected expenditure will reach <strong>${formatINR(projectedSpend)}</strong> by month-end, exceeding your target budget by <strong>${formatINR(over)}</strong>. Reduce discretionary shopping and dining.`;
+        if (isEarlyMonth) {
+            healthAdvice = `Initial month pace (Day ${currentDay}): Current burn rate projects <strong>${formatINR(projectedSpend)}</strong>. Early-month fixed payments (e.g., rent, fees) will normalize daily velocity as the month progresses.`;
+        } else {
+            healthAdvice = `At your current velocity of <strong>${formatINR(dailyVelocity)}/day</strong>, your projected expenditure will reach <strong>${formatINR(projectedSpend)}</strong> by month-end, exceeding your target budget by <strong>${formatINR(over)}</strong>. Reduce discretionary shopping and dining.`;
+        }
     } else if (projectedRatio > 80) {
         healthBadge = '⚡ Moderate Pace - Near Limit';
         healthColor = 'border-warning bg-warning-subtle text-warning-emphasis';

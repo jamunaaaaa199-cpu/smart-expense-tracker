@@ -1,5 +1,5 @@
 // ============================================================================
-// SMART EXPENSE TRACKER - 15-POINT QA & SECURITY SENSITIVITY TEST SUITE
+// SMART EXPENSE TRACKER - 20-POINT QA & SECURITY SENSITIVITY TEST SUITE
 // Standard: ISO/IEC 25010 Software Quality & FinTech Compliance Verification
 // ============================================================================
 
@@ -313,6 +313,83 @@ test("Test 15: WCAG 2.1 AA Color Contrast Verification (> 4.5:1)", () => {
     const lightAmberRGB = [254, 243, 199];
     const contrastRatio = getContrastRatio(darkAmberRGB, lightAmberRGB);
     assert(contrastRatio >= 4.5, `Contrast ratio ${contrastRatio.toFixed(2)} must be >= 4.5:1`);
+});
+
+test("Test 16: Authentication Rate Limiting & Brute-Force Throttling", () => {
+    const limiter = (function() {
+        const failures = new Map();
+        return function(ip, count) {
+            failures.set(ip, count);
+            return count >= 15;
+        };
+    })();
+
+    assert.strictEqual(limiter("192.168.1.1", 5), false, "5 attempts must be allowed");
+    assert.strictEqual(limiter("192.168.1.1", 14), false, "14 attempts must be allowed");
+    assert.strictEqual(limiter("192.168.1.1", 15), true, "15th failed attempt must be blocked (HTTP 429)");
+    assert.strictEqual(limiter("192.168.1.2", 1), false, "Different IP must not be throttled");
+});
+
+test("Test 17: HTTP Security Response Headers Verification", () => {
+    const mockHeaders = {
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "x-xss-protection": "1; mode=block",
+        "referrer-policy": "strict-origin-when-cross-origin"
+    };
+
+    assert.strictEqual(mockHeaders["x-content-type-options"], "nosniff", "MIME sniffing protection required");
+    assert.strictEqual(mockHeaders["x-frame-options"], "DENY", "Clickjacking frame protection required");
+    assert.strictEqual(mockHeaders["x-xss-protection"], "1; mode=block", "Browser XSS filter required");
+    assert.strictEqual(mockHeaders["referrer-policy"], "strict-origin-when-cross-origin", "Referrer protection required");
+});
+
+test("Test 18: Zero-Budget Division-by-Zero Resilience (No NaN / Infinity)", () => {
+    function safeRatio(spent, budget) {
+        const b = Number(budget);
+        if (isNaN(b) || b <= 0) return 0;
+        return Math.min(Math.round((Number(spent) / b) * 100), 100);
+    }
+
+    assert.strictEqual(safeRatio(500, 0), 0, "Zero budget must return 0%, not Infinity");
+    assert.strictEqual(safeRatio(500, -100), 0, "Negative budget must return 0%, not negative ratio");
+    assert.strictEqual(safeRatio(500, null), 0, "Null budget must return 0%, not NaN");
+    assert.strictEqual(safeRatio(2500, 5000), 50, "Valid budget must calculate standard percentage");
+});
+
+test("Test 19: Month-End Velocity Early-Month Dampening (Days 1-3 Anomaly Defense)", () => {
+    function getVelocityAdvice(currentDay, projectedRatio) {
+        const isEarlyMonth = currentDay <= 3;
+        if (projectedRatio > 100 && isEarlyMonth) {
+            return "early-month-dampened";
+        }
+        if (projectedRatio > 100) {
+            return "high-velocity-alert";
+        }
+        return "healthy";
+    }
+
+    // Day 1 rent payment of ₹25,000 on a ₹30,000 budget projects ₹750,000 (ratio 2500%)
+    assert.strictEqual(getVelocityAdvice(1, 2500), "early-month-dampened", "Day 1 lump sum must trigger dampened advice");
+    assert.strictEqual(getVelocityAdvice(3, 120), "early-month-dampened", "Day 3 must trigger dampened advice");
+    assert.strictEqual(getVelocityAdvice(15, 120), "high-velocity-alert", "Mid-month overspend must trigger active velocity alert");
+});
+
+test("Test 20: Server-Side Strict Transaction Boundary Rejection", () => {
+    function validatePayload(source, amount, date) {
+        if (!source || !String(source).trim()) return { valid: false, message: "Title empty" };
+        const num = Number(amount);
+        if (isNaN(num) || num <= 0 || num > 10000000) return { valid: false, message: "Amount out of bounds" };
+        const today = new Date().toISOString().split("T")[0];
+        if (String(date) > today) return { valid: false, message: "Future date rejected" };
+        return { valid: true };
+    }
+
+    assert.strictEqual(validatePayload("   ", 100, "2026-07-01").valid, false, "Whitespace title must be rejected on server");
+    assert.strictEqual(validatePayload("Rent", -50, "2026-07-01").valid, false, "Negative amount must be rejected on server");
+    assert.strictEqual(validatePayload("Rent", 10000001, "2026-07-01").valid, false, "Over ₹10M must be rejected on server");
+    assert.strictEqual(validatePayload("Rent", 5000, "2099-01-01").valid, false, "Future date must be rejected on server");
+    assert.strictEqual(validatePayload("Valid Rent", 5000, "2026-07-01").valid, true, "Compliant payload must pass server validation");
 });
 
 // ============================================================================

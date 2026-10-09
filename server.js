@@ -30,6 +30,15 @@ function getDB() {
 }
 
 // ── Middleware ────────────────────────────────────────────
+// Defense-in-Depth Security Headers
+app.use((req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("X-XSS-Protection", "1; mode=block");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    next();
+});
+
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -138,6 +147,34 @@ function getAuthUserId(req) {
     return parseInt(req.query.user_id || req.body?.user_id) || 1;
 }
 
+// ── In-Memory Auth Rate Limiter (Brute-Force Guard) ─────────
+const authFailures = new Map();
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 mins
+const MAX_FAILED_ATTEMPTS = 15;
+
+function checkAuthRateLimit(ip) {
+    const record = authFailures.get(ip);
+    if (!record) return { blocked: false };
+    if (Date.now() - record.firstAttempt > RATE_LIMIT_WINDOW_MS) {
+        authFailures.delete(ip);
+        return { blocked: false };
+    }
+    if (record.count >= MAX_FAILED_ATTEMPTS) {
+        return { blocked: true, retryAfter: Math.ceil((RATE_LIMIT_WINDOW_MS - (Date.now() - record.firstAttempt)) / 1000) };
+    }
+    return { blocked: false };
+}
+
+function recordAuthFailure(ip) {
+    const record = authFailures.get(ip) || { count: 0, firstAttempt: Date.now() };
+    record.count += 1;
+    authFailures.set(ip, record);
+}
+
+function clearAuthFailure(ip) {
+    authFailures.delete(ip);
+}
+
 // =========================================================
 // AUTH APIs
 // =========================================================
@@ -173,6 +210,15 @@ app.post("/api/auth/register", async (req, res) => {
 });
 
 app.post("/api/auth/login", async (req, res) => {
+    const clientIp = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "127.0.0.1";
+    const rateCheck = checkAuthRateLimit(clientIp);
+    if (rateCheck.blocked) {
+        return res.status(429).json({
+            success: false,
+            message: `Too many failed attempts. Please retry after ${rateCheck.retryAfter} seconds.`
+        });
+    }
+
     const { email, password } = req.body;
     if (!email || !password)
         return res.status(400).json({ success: false, message: "Email and password are required." });
@@ -182,6 +228,7 @@ app.post("/api/auth/login", async (req, res) => {
 
     if ((cleanEmail === "demo@example.com" && cleanPass === "admin123") ||
         (cleanEmail === "demo@example.com" && cleanPass === "123456")) {
+        clearAuthFailure(clientIp);
         const demoUser = { user_id: 1, full_name: "Demo Admin", email: cleanEmail, mobile: "9876543210" };
         return res.json({
             success: true, message: "Login successful!",
@@ -194,9 +241,12 @@ app.post("/api/auth/login", async (req, res) => {
         .select("user_id,full_name,email,mobile,password")
         .eq("email", cleanEmail).single(), null);
 
-    if (!user || !verifyPassword(cleanPass, user.password))
+    if (!user || !verifyPassword(cleanPass, user.password)) {
+        recordAuthFailure(clientIp);
         return res.status(401).json({ success: false, message: "Invalid email or password." });
+    }
 
+    clearAuthFailure(clientIp);
     const userPayload = { user_id: user.user_id, full_name: user.full_name, email: user.email, mobile: user.mobile };
     return res.json({
         success: true, message: "Login successful!",
@@ -280,8 +330,19 @@ app.post("/api/income", async (req, res) => {
     if (!source || !category || !amount || !income_date)
         return res.status(400).json({ success: false, message: "Source, category, amount and date are required." });
 
+    if (!String(source).trim())
+        return res.status(400).json({ success: false, message: "Source title cannot be empty or whitespace only." });
+
+    const numAmount = Number(amount);
+    if (isNaN(numAmount) || numAmount <= 0 || numAmount > 10000000)
+        return res.status(400).json({ success: false, message: "Amount must be between 0.01 and 10,000,000.00." });
+
+    const todayStr = new Date().toISOString().split("T")[0];
+    if (String(income_date) > todayStr)
+        return res.status(400).json({ success: false, message: "Transaction date cannot be in the future." });
+
     const { data, error } = await sbQuery(sb => sb.from("income").insert([{
-        user_id: userId, source, category, amount: Number(amount), income_date, description: description || ""
+        user_id: userId, source: String(source).trim(), category, amount: numAmount, income_date, description: description || ""
     }]).select().single(), null);
 
     if (error || !data) return res.status(500).json({ success: false, message: error?.message || "Insert failed." });
@@ -292,8 +353,24 @@ app.put("/api/income/:id", async (req, res) => {
     const userId = getAuthUserId(req);
     const id = isNaN(Number(req.params.id)) ? req.params.id : Number(req.params.id);
     const { source, category, amount, income_date, description } = req.body;
-    const { error } = await sbQuery(sb => sb.from("income").update({ source, category, amount: Number(amount), income_date, description: description || "" })
-        .eq("income_id", id), null);
+
+    if (!source || !category || !amount || !income_date)
+        return res.status(400).json({ success: false, message: "Source, category, amount and date are required." });
+
+    if (!String(source).trim())
+        return res.status(400).json({ success: false, message: "Source title cannot be empty or whitespace only." });
+
+    const numAmount = Number(amount);
+    if (isNaN(numAmount) || numAmount <= 0 || numAmount > 10000000)
+        return res.status(400).json({ success: false, message: "Amount must be between 0.01 and 10,000,000.00." });
+
+    const todayStr = new Date().toISOString().split("T")[0];
+    if (String(income_date) > todayStr)
+        return res.status(400).json({ success: false, message: "Transaction date cannot be in the future." });
+
+    const { error } = await sbQuery(sb => sb.from("income").update({
+        source: String(source).trim(), category, amount: numAmount, income_date, description: description || ""
+    }).eq("income_id", id), null);
     if (error) return res.status(500).json({ success: false, message: error.message });
     res.json({ success: true, message: "Income updated!" });
 });
@@ -341,8 +418,19 @@ app.post("/api/expenses", async (req, res) => {
     if (!title || !category || !amount || !expense_date)
         return res.status(400).json({ success: false, message: "Title, category, amount and date are required." });
 
+    if (!String(title).trim())
+        return res.status(400).json({ success: false, message: "Expense title cannot be empty or whitespace only." });
+
+    const numAmount = Number(amount);
+    if (isNaN(numAmount) || numAmount <= 0 || numAmount > 10000000)
+        return res.status(400).json({ success: false, message: "Amount must be between 0.01 and 10,000,000.00." });
+
+    const todayStr = new Date().toISOString().split("T")[0];
+    if (String(expense_date) > todayStr)
+        return res.status(400).json({ success: false, message: "Transaction date cannot be in the future." });
+
     const { data, error } = await sbQuery(sb => sb.from("expenses").insert([{
-        user_id: userId, title, category, amount: Number(amount), expense_date, description: description || ""
+        user_id: userId, title: String(title).trim(), category, amount: numAmount, expense_date, description: description || ""
     }]).select().single(), null);
 
     if (error || !data) return res.status(500).json({ success: false, message: error?.message || "Insert failed." });
@@ -353,8 +441,24 @@ app.put("/api/expenses/:id", async (req, res) => {
     const userId = getAuthUserId(req);
     const id = isNaN(Number(req.params.id)) ? req.params.id : Number(req.params.id);
     const { title, category, amount, expense_date, description } = req.body;
-    const { error } = await sbQuery(sb => sb.from("expenses").update({ title, category, amount: Number(amount), expense_date, description: description || "" })
-        .eq("expense_id", id), null);
+
+    if (!title || !category || !amount || !expense_date)
+        return res.status(400).json({ success: false, message: "Title, category, amount and date are required." });
+
+    if (!String(title).trim())
+        return res.status(400).json({ success: false, message: "Expense title cannot be empty or whitespace only." });
+
+    const numAmount = Number(amount);
+    if (isNaN(numAmount) || numAmount <= 0 || numAmount > 10000000)
+        return res.status(400).json({ success: false, message: "Amount must be between 0.01 and 10,000,000.00." });
+
+    const todayStr = new Date().toISOString().split("T")[0];
+    if (String(expense_date) > todayStr)
+        return res.status(400).json({ success: false, message: "Transaction date cannot be in the future." });
+
+    const { error } = await sbQuery(sb => sb.from("expenses").update({
+        title: String(title).trim(), category, amount: numAmount, expense_date, description: description || ""
+    }).eq("expense_id", id), null);
     if (error) return res.status(500).json({ success: false, message: error.message });
     res.json({ success: true, message: "Expense updated!" });
 });
@@ -383,12 +487,17 @@ app.post("/api/budget", async (req, res) => {
     const m = month || (new Date().getMonth() + 1);
     const y = year || new Date().getFullYear();
 
+    const numBudget = Number(budget_amount);
+    if (isNaN(numBudget) || numBudget < 0 || numBudget > 100000000) {
+        return res.status(400).json({ success: false, message: "Budget amount must be a valid positive number up to 100,000,000.00." });
+    }
+
     const { data: existing } = await sbQuery(sb => sb.from("budgets").select("budget_id").eq("user_id", uid).eq("month", m).eq("year", y).single(), null);
     let error;
     if (existing && existing.budget_id) {
-        ({ error } = await sbQuery(sb => sb.from("budgets").update({ budget_amount: Number(budget_amount) }).eq("budget_id", existing.budget_id), null));
+        ({ error } = await sbQuery(sb => sb.from("budgets").update({ budget_amount: numBudget }).eq("budget_id", existing.budget_id), null));
     } else {
-        ({ error } = await sbQuery(sb => sb.from("budgets").insert([{ user_id: uid, month: m, year: y, budget_amount: Number(budget_amount) }]), null));
+        ({ error } = await sbQuery(sb => sb.from("budgets").insert([{ user_id: uid, month: m, year: y, budget_amount: numBudget }]), null));
     }
     if (error) return res.status(500).json({ success: false, message: error.message });
     res.json({ success: true, message: "Budget updated!" });
