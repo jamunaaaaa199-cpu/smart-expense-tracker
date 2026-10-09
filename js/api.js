@@ -70,44 +70,16 @@ function sanitizeCsvCell(val) {
     return `"${str}"`;
 }
 
-// Initialize Default Seed Data safely
+// // Clean Storage Initializer (Zero Fake Data)
 function initLocalStorage() {
     if (!safeGetStorage("users_db")) {
-        const defaultUsers = [
-            { user_id: 1, full_name: "Demo Admin", email: "demo@example.com", password: "admin123", mobile: "9876543210" },
-            { user_id: 2, full_name: "Demo User", email: "demo@example.com", password: "123456", mobile: "9123456780" }
-        ];
-        safeSetStorage("users_db", defaultUsers);
+        safeSetStorage("users_db", []);
     }
-
-    if (!safeGetStorage("user")) {
-        const defaultUser = { user_id: 1, full_name: "Demo Admin", email: "demo@example.com", mobile: "9876543210" };
-        safeSetStorage("user", defaultUser);
-    }
-
     if (!safeGetStorage("incomes")) {
-        const defaultIncomes = [
-            { income_id: "inc_1", user_id: 1, source: "Monthly Salary", category: "Salary", amount: 50000.00, income_date: "2026-07-01", description: "Monthly Company Salary" },
-            { income_id: "inc_2", user_id: 1, source: "Freelance Project", category: "Freelancing", amount: 8000.00, income_date: "2026-07-05", description: "Web Design Client Payment" },
-            { income_id: "inc_3", user_id: 1, source: "Stock Dividend", category: "Investment", amount: 2500.00, income_date: "2026-07-10", description: "Quarterly Dividend" },
-            { income_id: "inc_4", user_id: 1, source: "Festival Bonus", category: "Bonus", amount: 5000.00, income_date: "2026-07-12", description: "Mid-year performance bonus" }
-        ];
-        safeSetStorage("incomes", defaultIncomes);
+        safeSetStorage("incomes", []);
     }
-
     if (!safeGetStorage("expenses")) {
-        const defaultExpenses = [
-            { expense_id: "exp_1", user_id: 1, title: "Restaurant Dinner", category: "Food", amount: 750.00, expense_date: "2026-07-12", description: "Family dinner" },
-            { expense_id: "exp_2", user_id: 1, title: "Bike Fuel", category: "Travel", amount: 1200.00, expense_date: "2026-07-11", description: "Petrol refill" },
-            { expense_id: "exp_3", user_id: 1, title: "Electricity Bill", category: "Bills", amount: 2300.00, expense_date: "2026-07-10", description: "Monthly EB Bill" },
-            { expense_id: "exp_4", user_id: 1, title: "Weekend Clothes", category: "Shopping", amount: 2500.00, expense_date: "2026-07-09", description: "Shopping mall" },
-            { expense_id: "exp_5", user_id: 1, title: "Groceries", category: "Food", amount: 3500.00, expense_date: "2026-07-07", description: "Supermarket monthly items" }
-        ];
-        safeSetStorage("expenses", defaultExpenses);
-    }
-
-    if (!safeGetStorage("budget")) {
-        safeSetStorage("budget", { budget_amount: 40000.00, month: 7, year: 2026 });
+        safeSetStorage("expenses", []);
     }
 }
 
@@ -115,11 +87,15 @@ initLocalStorage();
 
 const API = {
     getUser() {
-        return safeGetStorage("user", { user_id: 1, full_name: "Demo Admin", email: "demo@example.com" });
+        return safeGetStorage("user", null);
     },
 
     setUser(user) {
-        safeSetStorage("user", user);
+        if (user) {
+            safeSetStorage("user", user);
+        } else {
+            try { localStorage.removeItem("user"); } catch (e) {}
+        }
     },
 
     getToken() {
@@ -127,7 +103,11 @@ const API = {
     },
 
     setToken(token) {
-        if (token) safeSetStorage("auth_token", token);
+        if (token) {
+            safeSetStorage("auth_token", token);
+        } else {
+            try { localStorage.removeItem("auth_token"); } catch (e) {}
+        }
     },
 
     getAuthHeaders() {
@@ -148,32 +128,8 @@ const API = {
 
     async login(email, password) {
         initLocalStorage();
-        const users = safeGetStorage("users_db", []);
         const cleanEmail = (email || "").trim().toLowerCase();
         const cleanPass = (password || "").trim();
-
-        const found = users.find(u => (u.email || "").toLowerCase() === cleanEmail && u.password === cleanPass);
-        if (found) {
-            const userObj = { user_id: found.user_id, full_name: found.full_name, email: found.email, mobile: found.mobile || "" };
-            this.setUser(userObj);
-            fetch(`${API_BASE}/api/auth/login`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email: cleanEmail, password: cleanPass })
-            }).then(r => r.json()).then(d => { if (d.token) this.setToken(d.token); }).catch(() => {});
-            return { success: true, user: userObj, message: "Login successful!" };
-        }
-
-        if ((cleanEmail === "demo@example.com" && cleanPass === "admin123") || (cleanEmail === "demo@example.com" && cleanPass === "123456")) {
-            const userObj = { user_id: 1, full_name: "Demo Admin", email: cleanEmail, mobile: "9876543210" };
-            this.setUser(userObj);
-            fetch(`${API_BASE}/api/auth/login`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email: cleanEmail, password: cleanPass })
-            }).then(r => r.json()).then(d => { if (d.token) this.setToken(d.token); }).catch(() => {});
-            return { success: true, user: userObj, message: "Login successful!" };
-        }
 
         try {
             const res = await fetch(`${API_BASE}/api/auth/login`, {
@@ -181,59 +137,95 @@ const API = {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email: cleanEmail, password: cleanPass })
             });
-            if (res.ok) {
-                const data = await res.json();
-                if (data.success && data.user) {
-                    this.setUser(data.user);
-                    if (data.token) this.setToken(data.token);
-                    return data;
-                }
+            const data = await res.json();
+            if (res.ok && data.success && data.user) {
+                this.setUser(data.user);
+                if (data.token) this.setToken(data.token);
+                return data;
+            } else {
+                throw new Error(data.message || "Invalid email or password.");
             }
         } catch (e) {
-            console.warn("Remote login fallback to local records:", e);
+            // Local fallback if server unreachable
+            const users = safeGetStorage("users_db", []);
+            const found = users.find(u => (u.email || "").toLowerCase() === cleanEmail && u.password === cleanPass);
+            if (found) {
+                const userObj = { user_id: found.user_id, full_name: found.full_name, email: found.email, mobile: found.mobile || "" };
+                this.setUser(userObj);
+                return { success: true, user: userObj, message: "Login successful!" };
+            }
+            throw new Error(e.message || "Invalid email or password.");
         }
-
-        throw new Error("Invalid email or password. Please use demo@example.com / admin123");
     },
 
     async register(full_name, email, mobile, password) {
         initLocalStorage();
-        const users = safeGetStorage("users_db", []);
         const cleanEmail = (email || "").trim().toLowerCase();
+        const cleanPass = (password || "").trim();
+        const cleanName = (full_name || "").trim();
+        const cleanMobile = (mobile || "").trim();
 
-        if (users.some(u => (u.email || "").toLowerCase() === cleanEmail)) {
-            throw new Error("Email address already registered. Please sign in.");
+        try {
+            const res = await fetch(`${API_BASE}/api/auth/register`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    full_name: cleanName,
+                    email: cleanEmail,
+                    mobile: cleanMobile,
+                    password: cleanPass
+                })
+            });
+            const data = await res.json();
+            if (res.ok && data.success && data.user) {
+                this.setUser(data.user);
+                if (data.token) this.setToken(data.token);
+                const users = safeGetStorage("users_db", []);
+                users.push({ ...data.user, password: cleanPass });
+                safeSetStorage("users_db", users);
+                return data;
+            } else {
+                throw new Error(data.message || "Registration failed.");
+            }
+        } catch (e) {
+            const users = safeGetStorage("users_db", []);
+            if (users.some(u => (u.email || "").toLowerCase() === cleanEmail)) {
+                throw new Error("Email address already registered. Please sign in.");
+            }
+            const newUser = {
+                user_id: Date.now(),
+                full_name: cleanName,
+                email: cleanEmail,
+                mobile: cleanMobile,
+                password: cleanPass
+            };
+            users.push(newUser);
+            safeSetStorage("users_db", users);
+            const sessionUser = { user_id: newUser.user_id, full_name: newUser.full_name, email: newUser.email, mobile: newUser.mobile };
+            this.setUser(sessionUser);
+            return { success: true, user: sessionUser, message: "Registration successful!" };
         }
-
-        const newUser = {
-            user_id: generateUniqueId(),
-            full_name: (full_name || "").trim(),
-            email: cleanEmail,
-            mobile: (mobile || "").trim(),
-            password: (password || "").trim()
-        };
-
-        users.push(newUser);
-        safeSetStorage("users_db", users);
-
-        const sessionUser = { user_id: newUser.user_id, full_name: newUser.full_name, email: newUser.email, mobile: newUser.mobile };
-        this.setUser(sessionUser);
-
-        fetch(`${API_BASE}/api/auth/register`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(newUser)
-        }).catch(() => {});
-
-        return { success: true, user: sessionUser, message: "Registration successful!" };
     },
 
     async getDashboardStats() {
         initLocalStorage();
+        const user = this.getUser();
+        if (!user || !user.user_id) {
+            return {
+                totalIncome: 0,
+                totalExpense: 0,
+                balance: 0,
+                budgetAmount: 0,
+                spentPercent: 0,
+                remainingBudget: 0,
+                recentTransactions: []
+            };
+        }
 
         try {
-            const user = this.getUser();
-            const res = await fetch(`${API_BASE}/api/dashboard/stats?user_id=${user.user_id || 1}`);
+            const res = await fetch(`${API_BASE}/api/dashboard/stats?user_id=${user.user_id}`, {
+                headers: this.getAuthHeaders()
+            });
             if (res.ok) {
                 const json = await res.json();
                 if (json.success && json.data) {
@@ -252,14 +244,17 @@ const API = {
             console.warn("API stats fetch fallback to local:", e);
         }
 
-        const incomes = safeGetStorage("incomes", []);
-        const expenses = safeGetStorage("expenses", []);
-        const budgetObj = safeGetStorage("budget", { budget_amount: 40000 });
+        // Offline fallback: ONLY this user's records!
+        const allIncomes = safeGetStorage("incomes", []);
+        const allExpenses = safeGetStorage("expenses", []);
+        const incomes = allIncomes.filter(i => String(i.user_id) === String(user.user_id));
+        const expenses = allExpenses.filter(e => String(e.user_id) === String(user.user_id));
+        const userBudget = safeGetStorage(`budget_${user.user_id}`, safeGetStorage("budget", { budget_amount: 0 }));
 
         const totalIncome = parseAmount(incomes.reduce((sum, item) => sum + parseAmount(item.amount), 0));
         const totalExpense = parseAmount(expenses.reduce((sum, item) => sum + parseAmount(item.amount), 0));
         const balance = parseAmount(totalIncome - totalExpense);
-        const budgetAmount = parseAmount(budgetObj.budget_amount || 40000);
+        const budgetAmount = parseAmount(userBudget.budget_amount || 0);
         const spentPercent = budgetAmount > 0 ? Math.min(Math.round((totalExpense / budgetAmount) * 100), 100) : 0;
         const remainingBudget = parseAmount(Math.max(budgetAmount - totalExpense, 0));
 
@@ -281,36 +276,40 @@ const API = {
 
     async updateBudget(budgetAmount) {
         initLocalStorage();
+        const user = this.getUser();
+        if (!user || !user.user_id) throw new Error("Please sign in first.");
+
         const parsed = parseAmount(budgetAmount);
-        const budgetObj = { budget_amount: parsed, month: new Date().getMonth() + 1, year: new Date().getFullYear() };
+        const budgetObj = { user_id: user.user_id, budget_amount: parsed, month: new Date().getMonth() + 1, year: new Date().getFullYear() };
+        safeSetStorage(`budget_${user.user_id}`, budgetObj);
         safeSetStorage("budget", budgetObj);
 
         fetch(`${API_BASE}/api/budget`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: this.getAuthHeaders(),
             body: JSON.stringify(budgetObj)
         }).catch(() => {});
 
         return { success: true, message: "Budget target updated successfully!" };
     },
 
-    // Income Operations (Point 6: Add + Edit + Delete)
     async getIncome(params = {}) {
         initLocalStorage();
+        const user = this.getUser();
+        if (!user || !user.user_id) return [];
 
         try {
-            const user = this.getUser();
-            let url = `${API_BASE}/api/income?user_id=${user.user_id || 1}`;
+            let url = `${API_BASE}/api/income?user_id=${user.user_id}`;
             if (params.category && params.category !== "All" && params.category !== "Select Category") {
                 url += `&category=${encodeURIComponent(params.category)}`;
             }
             if (params.search) {
                 url += `&search=${encodeURIComponent(params.search)}`;
             }
-            const res = await fetch(url);
+            const res = await fetch(url, { headers: this.getAuthHeaders() });
             if (res.ok) {
                 const json = await res.json();
-                if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+                if (json.success && Array.isArray(json.data)) {
                     return json.data;
                 }
             }
@@ -318,7 +317,8 @@ const API = {
             console.warn("Remote income fetch fallback to local:", e);
         }
 
-        let list = safeGetStorage("incomes", []);
+        // Local fallback: strictly this user's records
+        let list = safeGetStorage("incomes", []).filter(i => String(i.user_id) === String(user.user_id));
 
         if (params.search) {
             const q = params.search.toLowerCase();
@@ -333,9 +333,13 @@ const API = {
 
     async addIncome(incomeData) {
         initLocalStorage();
+        const user = this.getUser();
+        if (!user || !user.user_id) throw new Error("Please sign in first.");
+
         const list = safeGetStorage("incomes", []);
         const newRecord = {
             ...incomeData,
+            user_id: user.user_id,
             income_id: generateUniqueId(),
             amount: parseAmount(incomeData.amount)
         };
@@ -345,7 +349,7 @@ const API = {
 
         fetch(`${API_BASE}/api/income`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: this.getAuthHeaders(),
             body: JSON.stringify(newRecord)
         }).catch(() => {});
 
@@ -354,8 +358,11 @@ const API = {
 
     async updateIncome(id, updatedData) {
         initLocalStorage();
+        const user = this.getUser();
+        if (!user || !user.user_id) throw new Error("Please sign in first.");
+
         let list = safeGetStorage("incomes", []);
-        const idx = list.findIndex(i => String(i.income_id) === String(id));
+        const idx = list.findIndex(i => String(i.income_id) === String(id) && String(i.user_id) === String(user.user_id));
         if (idx !== -1) {
             list[idx] = { ...list[idx], ...updatedData, amount: parseAmount(updatedData.amount) };
             safeSetStorage("incomes", list);
@@ -363,7 +370,7 @@ const API = {
 
         fetch(`${API_BASE}/api/income/${id}`, {
             method: "PUT",
-            headers: { "Content-Type": "application/json" },
+            headers: this.getAuthHeaders(),
             body: JSON.stringify(updatedData)
         }).catch(() => {});
 
@@ -372,31 +379,38 @@ const API = {
 
     async deleteIncome(id) {
         initLocalStorage();
+        const user = this.getUser();
+        if (!user || !user.user_id) throw new Error("Please sign in first.");
+
         let list = safeGetStorage("incomes", []);
-        list = list.filter(i => String(i.income_id) !== String(id));
+        list = list.filter(i => !(String(i.income_id) === String(id) && String(i.user_id) === String(user.user_id)));
         safeSetStorage("incomes", list);
 
-        fetch(`${API_BASE}/api/income/${id}`, { method: "DELETE" }).catch(() => {});
+        fetch(`${API_BASE}/api/income/${id}`, {
+            method: "DELETE",
+            headers: this.getAuthHeaders()
+        }).catch(() => {});
+
         return { success: true, message: "Income deleted successfully." };
     },
 
-    // Expenses Operations (Point 6: Add + Edit + Delete)
     async getExpenses(params = {}) {
         initLocalStorage();
+        const user = this.getUser();
+        if (!user || !user.user_id) return [];
 
         try {
-            const user = this.getUser();
-            let url = `${API_BASE}/api/expenses?user_id=${user.user_id || 1}`;
+            let url = `${API_BASE}/api/expenses?user_id=${user.user_id}`;
             if (params.category && params.category !== "All" && params.category !== "Select Category") {
                 url += `&category=${encodeURIComponent(params.category)}`;
             }
             if (params.search) {
                 url += `&search=${encodeURIComponent(params.search)}`;
             }
-            const res = await fetch(url);
+            const res = await fetch(url, { headers: this.getAuthHeaders() });
             if (res.ok) {
                 const json = await res.json();
-                if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+                if (json.success && Array.isArray(json.data)) {
                     return json.data;
                 }
             }
@@ -404,7 +418,8 @@ const API = {
             console.warn("Remote expenses fetch fallback to local:", e);
         }
 
-        let list = safeGetStorage("expenses", []);
+        // Local fallback: strictly this user's records
+        let list = safeGetStorage("expenses", []).filter(e => String(e.user_id) === String(user.user_id));
 
         if (params.search) {
             const q = params.search.toLowerCase();
@@ -419,9 +434,13 @@ const API = {
 
     async addExpense(expenseData) {
         initLocalStorage();
+        const user = this.getUser();
+        if (!user || !user.user_id) throw new Error("Please sign in first.");
+
         const list = safeGetStorage("expenses", []);
         const newRecord = {
             ...expenseData,
+            user_id: user.user_id,
             expense_id: generateUniqueId(),
             amount: parseAmount(expenseData.amount)
         };
@@ -431,7 +450,7 @@ const API = {
 
         fetch(`${API_BASE}/api/expenses`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: this.getAuthHeaders(),
             body: JSON.stringify(newRecord)
         }).catch(() => {});
 
@@ -440,8 +459,11 @@ const API = {
 
     async updateExpense(id, updatedData) {
         initLocalStorage();
+        const user = this.getUser();
+        if (!user || !user.user_id) throw new Error("Please sign in first.");
+
         let list = safeGetStorage("expenses", []);
-        const idx = list.findIndex(e => String(e.expense_id) === String(id));
+        const idx = list.findIndex(e => String(e.expense_id) === String(id) && String(e.user_id) === String(user.user_id));
         if (idx !== -1) {
             list[idx] = { ...list[idx], ...updatedData, amount: parseAmount(updatedData.amount) };
             safeSetStorage("expenses", list);
@@ -449,7 +471,7 @@ const API = {
 
         fetch(`${API_BASE}/api/expenses/${id}`, {
             method: "PUT",
-            headers: { "Content-Type": "application/json" },
+            headers: this.getAuthHeaders(),
             body: JSON.stringify(updatedData)
         }).catch(() => {});
 
@@ -458,19 +480,54 @@ const API = {
 
     async deleteExpense(id) {
         initLocalStorage();
+        const user = this.getUser();
+        if (!user || !user.user_id) throw new Error("Please sign in first.");
+
         let list = safeGetStorage("expenses", []);
-        list = list.filter(e => String(e.expense_id) !== String(id));
+        list = list.filter(e => !(String(e.expense_id) === String(id) && String(e.user_id) === String(user.user_id)));
         safeSetStorage("expenses", list);
 
-        fetch(`${API_BASE}/api/expenses/${id}`, { method: "DELETE" }).catch(() => {});
+        fetch(`${API_BASE}/api/expenses/${id}`, {
+            method: "DELETE",
+            headers: this.getAuthHeaders()
+        }).catch(() => {});
+
         return { success: true, message: "Expense record deleted." };
     },
 
     // Reports & Analytics
     async getReports(params = {}) {
         initLocalStorage();
-        const incomes = safeGetStorage("incomes", []);
-        const expenses = safeGetStorage("expenses", []);
+        const user = this.getUser();
+        if (!user || !user.user_id) {
+            return {
+                totalIncome: 0,
+                totalExpense: 0,
+                netSavings: 0,
+                categoryExpenseBreakdown: [],
+                monthlyTrends: [],
+                transactions: []
+            };
+        }
+
+        try {
+            let url = `${API_BASE}/api/reports/analytics?user_id=${user.user_id}`;
+            if (params.month) url += `&month=${encodeURIComponent(params.month)}`;
+            const res = await fetch(url, { headers: this.getAuthHeaders() });
+            if (res.ok) {
+                const json = await res.json();
+                if (json.success && json.data) {
+                    return json.data;
+                }
+            }
+        } catch (e) {
+            console.warn("API reports fetch fallback to local:", e);
+        }
+
+        const allIncomes = safeGetStorage("incomes", []);
+        const allExpenses = safeGetStorage("expenses", []);
+        let incomes = allIncomes.filter(i => String(i.user_id) === String(user.user_id));
+        let expenses = allExpenses.filter(e => String(e.user_id) === String(user.user_id));
 
         let allTx = [
             ...incomes.map(i => ({ id: i.income_id, date: i.income_date, title: i.source, category: i.category, amount: parseAmount(i.amount), type: "Income", description: i.description })),
@@ -480,7 +537,6 @@ const API = {
         if (params.month) {
             allTx = allTx.filter(t => t.date && t.date.startsWith(params.month));
         }
-
         if (params.category && params.category !== "All" && params.category !== "All Categories") {
             allTx = allTx.filter(t => t.category === params.category);
         }
@@ -498,30 +554,23 @@ const API = {
             totalIncome: totalInc,
             totalExpense: totalExp,
             netSavings: parseAmount(totalInc - totalExp),
-            categoryExpenseBreakdown: categoryExpenseBreakdown.length ? categoryExpenseBreakdown : [
-                { category: "Food", total: 4250.00 },
-                { category: "Travel", total: 1200.00 },
-                { category: "Shopping", total: 2500.00 },
-                { category: "Bills", total: 2300.00 }
-            ],
-            monthlyTrends: [
-                { month_label: "Jan", total_income: 40000.00, total_expense: 25000.00 },
-                { month_label: "Feb", total_income: 45000.00, total_expense: 28000.00 },
-                { month_label: "Mar", total_income: 50000.00, total_expense: 30000.00 },
-                { month_label: "Apr", total_income: 47000.00, total_expense: 27000.00 },
-                { month_label: "May", total_income: 52000.00, total_expense: 32000.00 },
-                { month_label: "Jun", total_income: 50000.00, total_expense: 29000.00 },
-                { month_label: "Jul", total_income: totalInc, total_expense: totalExp }
-            ],
+            categoryExpenseBreakdown,
+            monthlyTrends: [],
             transactions: allTx.sort((a, b) => new Date(b.date) - new Date(a.date))
         };
     },
 
-    // Point 11: CSV Data Export
+    // CSV Data Export (Filtered Strictly to Active User)
     downloadCSV() {
         initLocalStorage();
-        const incomes = safeGetStorage("incomes", []);
-        const expenses = safeGetStorage("expenses", []);
+        const user = this.getUser();
+        if (!user || !user.user_id) {
+            alert("Please sign in to export your transactions.");
+            return;
+        }
+
+        const incomes = safeGetStorage("incomes", []).filter(i => String(i.user_id) === String(user.user_id));
+        const expenses = safeGetStorage("expenses", []).filter(e => String(e.user_id) === String(user.user_id));
 
         let csv = "Date,Type,Title,Category,Amount,Description\n";
         incomes.forEach(i => {
@@ -535,7 +584,7 @@ const API = {
         const link = document.createElement("a");
         const url = URL.createObjectURL(blob);
         link.setAttribute("href", url);
-        link.setAttribute("download", `smart_expenses_${new Date().toISOString().split("T")[0]}.csv`);
+        link.setAttribute("download", `my_expenses_${new Date().toISOString().split("T")[0]}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

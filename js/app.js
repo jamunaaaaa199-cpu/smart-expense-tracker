@@ -411,8 +411,8 @@ window.openEditTransactionModal = function({ type, item, onSave }) {
 function setupCommonUI() {
     const user = API.getUser();
     const userDisplay = document.getElementById('navUserDisplay');
-    if (userDisplay && user) {
-        userDisplay.textContent = user.full_name || 'Demo User';
+    if (userDisplay) {
+        userDisplay.textContent = user ? (user.full_name || user.email) : 'My Account';
     }
 
     const path = window.location.pathname.split('/').pop() || 'index.html';
@@ -616,6 +616,13 @@ window.openBudgetModal = function() {
 // Page Router
 function initCurrentPage() {
     const path = window.location.pathname.split('/').pop() || 'index.html';
+    const user = API.getUser();
+    const protectedPages = ['dashboard.html', 'income.html', 'expenses.html', 'expense.html', 'reports.html'];
+
+    if (protectedPages.includes(path) && !user) {
+        window.location.href = 'login.html';
+        return;
+    }
 
     if (path === 'dashboard.html') {
         initDashboard();
@@ -1260,10 +1267,10 @@ function initRegisterPage() {
 
         try {
             await API.register(name, email, mobile, password);
-            showToast('Registration Successful! Redirecting to login...', 'success');
+            showToast('Account Created! Redirecting to Dashboard...', 'success');
             setTimeout(() => {
-                window.location.href = 'login.html';
-            }, 1200);
+                window.location.href = 'dashboard.html';
+            }, 800);
         } catch (err) {
             showToast(err.message || 'Registration failed.', 'error');
         }

@@ -41,10 +41,6 @@ npm start
 http://localhost:3000
 ```
 
-### Default Demo Credentials:
-* **Email:** `demo@example.com`
-* **Password:** `admin123`
-
 ---
 
 ## 🌐 1-Click Automated Cloud Deployment

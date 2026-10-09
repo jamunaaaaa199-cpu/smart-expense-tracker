@@ -137,14 +137,15 @@ function sanitizeCsvCell(val) {
     return `"${str}"`;
 }
 
-// Secure Multi-Tenancy Identity Resolver (Pure Zero-Crash Fallback)
+// Secure Multi-Tenancy Identity Resolver
 function getAuthUserId(req) {
     if (req.headers && req.headers.authorization && req.headers.authorization.startsWith("Bearer ")) {
         const token = req.headers.authorization.slice(7).trim();
         const verified = verifyToken(token);
         if (verified && verified.user_id) return parseInt(verified.user_id);
     }
-    return parseInt(req.query.user_id || req.body?.user_id) || 1;
+    const qId = parseInt(req.query.user_id || req.body?.user_id);
+    return isNaN(qId) ? null : qId;
 }
 
 // ── In-Memory Auth Rate Limiter (Brute-Force Guard) ─────────
@@ -226,17 +227,6 @@ app.post("/api/auth/login", async (req, res) => {
     const cleanEmail = (email || "").trim().toLowerCase();
     const cleanPass = (password || "").trim();
 
-    if ((cleanEmail === "demo@example.com" && cleanPass === "admin123") ||
-        (cleanEmail === "demo@example.com" && cleanPass === "123456")) {
-        clearAuthFailure(clientIp);
-        const demoUser = { user_id: 1, full_name: "Demo Admin", email: cleanEmail, mobile: "9876543210" };
-        return res.json({
-            success: true, message: "Login successful!",
-            user: demoUser,
-            token: generateToken(demoUser)
-        });
-    }
-
     const { data: user } = await sbQuery(sb => sb.from("users")
         .select("user_id,full_name,email,mobile,password")
         .eq("email", cleanEmail).single(), null);
@@ -260,6 +250,9 @@ app.post("/api/auth/login", async (req, res) => {
 // =========================================================
 app.get("/api/dashboard/stats", async (req, res) => {
     const userId = getAuthUserId(req);
+    if (!userId) {
+        return res.status(401).json({ success: false, message: "Authentication required to access dashboard." });
+    }
 
     const [incR, expR, bgtR, incTx, expTx] = await Promise.all([
         sbQuery(sb => sb.from("income").select("amount").eq("user_id", userId), []),
@@ -269,9 +262,9 @@ app.get("/api/dashboard/stats", async (req, res) => {
         sbQuery(sb => sb.from("expenses").select("expense_id,expense_date,title,category,amount").eq("user_id", userId).order("expense_date", { ascending: false }).limit(6), [])
     ]);
 
-    const totalIncome = (incR.data || []).reduce((s, r) => s + Number(r.amount || 0), 0) || 65500;
-    const totalExpense = (expR.data || []).reduce((s, r) => s + Number(r.amount || 0), 0) || 10250;
-    const budgetAmount = (bgtR.data && bgtR.data[0]) ? Number(bgtR.data[0].budget_amount) : 40000;
+    const totalIncome = (incR.data || []).reduce((s, r) => s + Number(r.amount || 0), 0);
+    const totalExpense = (expR.data || []).reduce((s, r) => s + Number(r.amount || 0), 0);
+    const budgetAmount = (bgtR.data && bgtR.data[0]) ? Number(bgtR.data[0].budget_amount) : 0;
     const balance = totalIncome - totalExpense;
     const spentPercent = budgetAmount > 0 ? Math.min(Math.round((totalExpense / budgetAmount) * 100), 100) : 0;
     const remainingBudget = Math.max(budgetAmount - totalExpense, 0);
@@ -280,18 +273,10 @@ app.get("/api/dashboard/stats", async (req, res) => {
     const expList = (expTx.data || []).map(r => ({ id: r.expense_id, date: r.expense_date, title: r.title, category: r.category, amount: r.amount, type: "Expense" }));
     const recentTransactions = [...incList, ...expList].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 6);
 
-    const fallback = [
-        { id: 1, date: "2026-07-12", title: "Festival Bonus", category: "Bonus", amount: 5000, type: "Income" },
-        { id: 2, date: "2026-07-12", title: "Restaurant Dinner", category: "Food", amount: 750, type: "Expense" },
-        { id: 3, date: "2026-07-10", title: "Stock Dividend", category: "Investment", amount: 2500, type: "Income" },
-        { id: 4, date: "2026-07-09", title: "Weekend Clothes", category: "Shopping", amount: 2500, type: "Expense" },
-        { id: 5, date: "2026-07-07", title: "Groceries", category: "Food", amount: 3500, type: "Expense" }
-    ];
-
     return res.json({
         success: true, data: {
             totalIncome, totalExpense, balance, budgetAmount, spentPercent, remainingBudget,
-            recentTransactions: recentTransactions.length > 0 ? recentTransactions : fallback
+            recentTransactions
         }
     });
 });
@@ -310,12 +295,6 @@ app.get("/api/income", async (req, res) => {
     }, []);
 
     let result = Array.isArray(data) ? data : [];
-    if (result.length === 0 && error) {
-        result = [
-            { income_id: 1, user_id: userId, source: "Monthly Salary", category: "Salary", amount: 50000, income_date: "2026-07-01", description: "Monthly Company Salary" },
-            { income_id: 4, user_id: userId, source: "Festival Bonus", category: "Bonus", amount: 5000, income_date: "2026-07-12", description: "Mid-year performance bonus" }
-        ];
-    }
 
     if (search) {
         const q = search.toLowerCase();
@@ -397,13 +376,6 @@ app.get("/api/expenses", async (req, res) => {
     }, []);
 
     let result = Array.isArray(data) ? data : [];
-    if (result.length === 0 && error) {
-        result = [
-            { expense_id: 1, user_id: userId, title: "Restaurant Dinner", category: "Food", amount: 750, expense_date: "2026-07-12", description: "Family dinner" },
-            { expense_id: 2, user_id: userId, title: "Groceries", category: "Food", amount: 3500, expense_date: "2026-07-07", description: "Monthly items" },
-            { expense_id: 3, user_id: userId, title: "Electricity Bill", category: "Bills", amount: 2300, expense_date: "2026-07-10", description: "EB Bill" }
-        ];
-    }
 
     if (search) {
         const q = search.toLowerCase();
@@ -540,8 +512,7 @@ app.get("/api/reports/analytics", async (req, res) => {
     res.json({
         success: true, data: {
             totalIncome, totalExpense, netSavings: totalIncome - totalExpense,
-            categoryExpenseBreakdown: categoryExpenseBreakdown.length ? categoryExpenseBreakdown :
-                [{ category: "Food", total: 4250 }, { category: "Travel", total: 1200 }, { category: "Shopping", total: 2500 }, { category: "Bills", total: 2300 }],
+            categoryExpenseBreakdown,
             monthlyTrends: [],
             transactions
         }
