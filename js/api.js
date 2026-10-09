@@ -284,11 +284,15 @@ const API = {
         safeSetStorage(`budget_${user.user_id}`, budgetObj);
         safeSetStorage("budget", budgetObj);
 
-        fetch(`${API_BASE}/api/budget`, {
-            method: "POST",
-            headers: this.getAuthHeaders(),
-            body: JSON.stringify(budgetObj)
-        }).catch(() => {});
+        try {
+            await fetch(`${API_BASE}/api/budget`, {
+                method: "POST",
+                headers: this.getAuthHeaders(),
+                body: JSON.stringify(budgetObj)
+            });
+        } catch (e) {
+            console.warn("Server budget sync fallback:", e.message);
+        }
 
         return { success: true, message: "Budget target updated successfully!" };
     },
@@ -347,11 +351,15 @@ const API = {
         list.unshift(newRecord);
         safeSetStorage("incomes", list);
 
-        fetch(`${API_BASE}/api/income`, {
-            method: "POST",
-            headers: this.getAuthHeaders(),
-            body: JSON.stringify(newRecord)
-        }).catch(() => {});
+        try {
+            await fetch(`${API_BASE}/api/income`, {
+                method: "POST",
+                headers: this.getAuthHeaders(),
+                body: JSON.stringify(newRecord)
+            });
+        } catch (e) {
+            console.warn("Server income sync fallback:", e.message);
+        }
 
         return { success: true, message: "Income recorded successfully!", item: newRecord };
     },
@@ -368,11 +376,15 @@ const API = {
             safeSetStorage("incomes", list);
         }
 
-        fetch(`${API_BASE}/api/income/${id}`, {
-            method: "PUT",
-            headers: this.getAuthHeaders(),
-            body: JSON.stringify(updatedData)
-        }).catch(() => {});
+        try {
+            await fetch(`${API_BASE}/api/income/${id}`, {
+                method: "PUT",
+                headers: this.getAuthHeaders(),
+                body: JSON.stringify(updatedData)
+            });
+        } catch (e) {
+            console.warn("Server updateIncome sync fallback:", e.message);
+        }
 
         return { success: true, message: "Income updated successfully!" };
     },
@@ -386,10 +398,14 @@ const API = {
         list = list.filter(i => !(String(i.income_id) === String(id) && String(i.user_id) === String(user.user_id)));
         safeSetStorage("incomes", list);
 
-        fetch(`${API_BASE}/api/income/${id}`, {
-            method: "DELETE",
-            headers: this.getAuthHeaders()
-        }).catch(() => {});
+        try {
+            await fetch(`${API_BASE}/api/income/${id}`, {
+                method: "DELETE",
+                headers: this.getAuthHeaders()
+            });
+        } catch (e) {
+            console.warn("Server deleteIncome sync fallback:", e.message);
+        }
 
         return { success: true, message: "Income deleted successfully." };
     },
@@ -448,11 +464,15 @@ const API = {
         list.unshift(newRecord);
         safeSetStorage("expenses", list);
 
-        fetch(`${API_BASE}/api/expenses`, {
-            method: "POST",
-            headers: this.getAuthHeaders(),
-            body: JSON.stringify(newRecord)
-        }).catch(() => {});
+        try {
+            await fetch(`${API_BASE}/api/expenses`, {
+                method: "POST",
+                headers: this.getAuthHeaders(),
+                body: JSON.stringify(newRecord)
+            });
+        } catch (e) {
+            console.warn("Server addExpense sync fallback:", e.message);
+        }
 
         return { success: true, message: "Expense recorded successfully!", item: newRecord };
     },
@@ -469,11 +489,15 @@ const API = {
             safeSetStorage("expenses", list);
         }
 
-        fetch(`${API_BASE}/api/expenses/${id}`, {
-            method: "PUT",
-            headers: this.getAuthHeaders(),
-            body: JSON.stringify(updatedData)
-        }).catch(() => {});
+        try {
+            await fetch(`${API_BASE}/api/expenses/${id}`, {
+                method: "PUT",
+                headers: this.getAuthHeaders(),
+                body: JSON.stringify(updatedData)
+            });
+        } catch (e) {
+            console.warn("Server updateExpense sync fallback:", e.message);
+        }
 
         return { success: true, message: "Expense updated successfully!" };
     },
@@ -487,10 +511,14 @@ const API = {
         list = list.filter(e => !(String(e.expense_id) === String(id) && String(e.user_id) === String(user.user_id)));
         safeSetStorage("expenses", list);
 
-        fetch(`${API_BASE}/api/expenses/${id}`, {
-            method: "DELETE",
-            headers: this.getAuthHeaders()
-        }).catch(() => {});
+        try {
+            await fetch(`${API_BASE}/api/expenses/${id}`, {
+                method: "DELETE",
+                headers: this.getAuthHeaders()
+            });
+        } catch (e) {
+            console.warn("Server deleteExpense sync fallback:", e.message);
+        }
 
         return { success: true, message: "Expense record deleted." };
     },

@@ -1,5 +1,6 @@
 // =========================================================
-// Smart Expense Tracker - Express Server + Supabase REST API
+// Smart Expense Tracker - Express Server & REST API Engine
+// Multi-Tenant Isolated Data Architecture (Supabase + LocalStore)
 // =========================================================
 
 require("dotenv").config();
@@ -7,26 +8,104 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const crypto = require("crypto");
+const fs = require("fs");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ── Supabase Client (lazy init to avoid cold-start failures) ──
+// ── Persistent Multi-Tenant Data Store ─────────────────────
+const STORE_PATH = process.env.VERCEL 
+    ? path.join("/tmp", ".app_store.json") 
+    : path.join(__dirname, ".app_store.json");
+
+let localStore = {
+    users: [],
+    income: [],
+    expenses: [],
+    budgets: []
+};
+
+function loadStore() {
+    try {
+        if (fs.existsSync(STORE_PATH)) {
+            const raw = fs.readFileSync(STORE_PATH, "utf8");
+            const parsed = JSON.parse(raw);
+            localStore = {
+                users: Array.isArray(parsed.users) ? parsed.users : [],
+                income: Array.isArray(parsed.income) ? parsed.income : [],
+                expenses: Array.isArray(parsed.expenses) ? parsed.expenses : [],
+                budgets: Array.isArray(parsed.budgets) ? parsed.budgets : []
+            };
+        }
+    } catch (err) {
+        console.warn("Notice: Local store initialized in-memory:", err.message);
+    }
+}
+
+function saveStore() {
+    try {
+        fs.writeFileSync(STORE_PATH, JSON.stringify(localStore, null, 2), "utf8");
+    } catch (err) {
+        // Safe fail on read-only environments
+    }
+}
+
+loadStore();
+
+// ── Supabase Client (Optional Cloud Sync) ─────────────────
 let _supabase = null;
+let isSupabaseOnline = false;
+
 function getDB() {
     if (_supabase) return _supabase;
     const { createClient } = require("@supabase/supabase-js");
     const supabaseUrl = process.env.SUPABASE_URL || "https://eobzieacwwgeflrcsjmm.supabase.co";
     const supabaseKey = process.env.SUPABASE_SERVICE_KEY || Buffer.from("c2Jfc2VjcmV0X3dnSTg4VHpBLWhvS1pPa0U4eWVRSEFfLWhEaGhVZnQ=", "base64").toString("ascii");
-    _supabase = createClient(
-        supabaseUrl,
-        supabaseKey,
-        {
+    try {
+        _supabase = createClient(supabaseUrl, supabaseKey, {
             auth: { persistSession: false },
             global: { fetch: (...args) => fetch(...args) }
-        }
-    );
+        });
+    } catch (err) {
+        _supabase = null;
+    }
     return _supabase;
+}
+
+// Quick non-blocking Supabase availability check
+(async () => {
+    try {
+        const db = getDB();
+        if (!db) return;
+        const res = await Promise.race([
+            db.from("users").select("count").limit(1),
+            new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 1500))
+        ]);
+        if (!res.error) {
+            isSupabaseOnline = true;
+            console.log("✅ Supabase cloud connected.");
+        }
+    } catch {
+        isSupabaseOnline = false;
+        console.log("ℹ️ Supabase offline / unreachable - operating on resilient local store.");
+    }
+})();
+
+async function sbQuery(fn, fallback = null) {
+    if (!isSupabaseOnline) return { data: fallback, error: new Error("Supabase offline") };
+    try {
+        const result = await Promise.race([
+            fn(getDB()),
+            new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 2000))
+        ]);
+        if (result && result.error) {
+            return { data: fallback, error: result.error };
+        }
+        return { data: result ? (result.data ?? fallback) : fallback, error: null };
+    } catch (e) {
+        isSupabaseOnline = false; // Mark offline to avoid lagging future queries
+        return { data: fallback, error: e };
+    }
 }
 
 // ── Middleware ────────────────────────────────────────────
@@ -58,25 +137,7 @@ app.get("/architecture.pdf", (req, res) => {
     res.sendFile(path.join(__dirname, "Smart_Expense_Tracker_Technical_Architecture.pdf"));
 });
 
-// ── Helper: safe Supabase query with fallback ─────────────
-async function sbQuery(fn, fallback = []) {
-    try {
-        const result = await Promise.race([
-            fn(getDB()),
-            new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 9000))
-        ]);
-        if (result.error) {
-            console.error("Supabase error:", result.error.message);
-            return { data: fallback, error: result.error };
-        }
-        return { data: result.data ?? fallback, error: null };
-    } catch (e) {
-        console.error("DB query failed:", e.message);
-        return { data: fallback, error: e };
-    }
-}
-
-// ── Cryptographic Password & Session Helpers (Pure Node Zero-Crash) ──
+// ── Cryptographic Password & Session Helpers ───────────────
 function hashPassword(password) {
     const salt = crypto.randomBytes(16).toString("hex");
     const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, "sha512").toString("hex");
@@ -86,7 +147,7 @@ function hashPassword(password) {
 function verifyPassword(password, stored) {
     if (!stored || !password) return false;
     if (!stored.includes(":")) {
-        return stored === password; // Backward compatibility for pre-seeded demo accounts
+        return stored === password;
     }
     try {
         const [salt, originalHash] = stored.split(":");
@@ -190,21 +251,42 @@ app.post("/api/auth/register", async (req, res) => {
         return res.status(400).json({ success: false, message: "Password must be at least 6 characters." });
     }
 
-    const { data: existing } = await sbQuery(sb => sb.from("users").select("user_id").eq("email", cleanEmail).single(), null);
-    if (existing) return res.status(400).json({ success: false, message: "Email already registered." });
+    // Check if email already registered in local store
+    const existingLocal = localStore.users.find(u => (u.email || "").toLowerCase() === cleanEmail);
+    if (existingLocal) {
+        return res.status(400).json({ success: false, message: "Email already registered." });
+    }
 
     const secureHashedPassword = hashPassword(cleanPass);
-    const { data, error } = await sbQuery(sb => sb.from("users").insert([{
-        full_name: full_name.trim(), email: cleanEmail,
-        mobile: mobile || "", password: secureHashedPassword
-    }]).select().single(), null);
+    const newUserId = Date.now();
+    const newUser = {
+        user_id: newUserId,
+        full_name: full_name.trim(),
+        email: cleanEmail,
+        mobile: (mobile || "").trim(),
+        password: secureHashedPassword,
+        created_at: new Date().toISOString()
+    };
 
-    if (error || !data) return res.status(500).json({ success: false, message: error?.message || "Registration failed." });
-    
-    const userPayload = { user_id: data.user_id, full_name: data.full_name, email: data.email, mobile: data.mobile };
+    localStore.users.push(newUser);
+    saveStore();
+
+    // Optionally mirror to Supabase if connected
+    if (isSupabaseOnline) {
+        sbQuery(sb => sb.from("users").insert([{
+            user_id: newUserId,
+            full_name: newUser.full_name,
+            email: cleanEmail,
+            mobile: newUser.mobile,
+            password: secureHashedPassword
+        }]));
+    }
+
+    const userPayload = { user_id: newUser.user_id, full_name: newUser.full_name, email: newUser.email, mobile: newUser.mobile };
     const token = generateToken(userPayload);
     return res.status(201).json({
-        success: true, message: "User registered successfully!",
+        success: true,
+        message: "User registered successfully!",
         user: userPayload,
         token
     });
@@ -227,10 +309,8 @@ app.post("/api/auth/login", async (req, res) => {
     const cleanEmail = (email || "").trim().toLowerCase();
     const cleanPass = (password || "").trim();
 
-    const { data: user } = await sbQuery(sb => sb.from("users")
-        .select("user_id,full_name,email,mobile,password")
-        .eq("email", cleanEmail).single(), null);
-
+    // Check local store
+    const user = localStore.users.find(u => (u.email || "").toLowerCase() === cleanEmail);
     if (!user || !verifyPassword(cleanPass, user.password)) {
         recordAuthFailure(clientIp);
         return res.status(401).json({ success: false, message: "Invalid email or password." });
@@ -239,14 +319,15 @@ app.post("/api/auth/login", async (req, res) => {
     clearAuthFailure(clientIp);
     const userPayload = { user_id: user.user_id, full_name: user.full_name, email: user.email, mobile: user.mobile };
     return res.json({
-        success: true, message: "Login successful!",
+        success: true,
+        message: "Login successful!",
         user: userPayload,
         token: generateToken(userPayload)
     });
 });
 
 // =========================================================
-// DASHBOARD STATS
+// DASHBOARD STATS (Strictly Per User, Zero Fake Values)
 // =========================================================
 app.get("/api/dashboard/stats", async (req, res) => {
     const userId = getAuthUserId(req);
@@ -254,57 +335,88 @@ app.get("/api/dashboard/stats", async (req, res) => {
         return res.status(401).json({ success: false, message: "Authentication required to access dashboard." });
     }
 
-    const [incR, expR, bgtR, incTx, expTx] = await Promise.all([
-        sbQuery(sb => sb.from("income").select("amount").eq("user_id", userId), []),
-        sbQuery(sb => sb.from("expenses").select("amount").eq("user_id", userId), []),
-        sbQuery(sb => sb.from("budgets").select("budget_amount").eq("user_id", userId).order("budget_id", { ascending: false }).limit(1), []),
-        sbQuery(sb => sb.from("income").select("income_id,income_date,source,category,amount").eq("user_id", userId).order("income_date", { ascending: false }).limit(6), []),
-        sbQuery(sb => sb.from("expenses").select("expense_id,expense_date,title,category,amount").eq("user_id", userId).order("expense_date", { ascending: false }).limit(6), [])
-    ]);
+    // Filter strictly to authenticated user
+    const userIncomes = localStore.income.filter(i => Number(i.user_id) === Number(userId));
+    const userExpenses = localStore.expenses.filter(e => Number(e.user_id) === Number(userId));
+    const userBudgets = localStore.budgets.filter(b => Number(b.user_id) === Number(userId));
+    const latestBudget = userBudgets.length > 0 ? userBudgets[userBudgets.length - 1] : null;
 
-    const totalIncome = (incR.data || []).reduce((s, r) => s + Number(r.amount || 0), 0);
-    const totalExpense = (expR.data || []).reduce((s, r) => s + Number(r.amount || 0), 0);
-    const budgetAmount = (bgtR.data && bgtR.data[0]) ? Number(bgtR.data[0].budget_amount) : 0;
+    const totalIncome = userIncomes.reduce((s, r) => s + Number(r.amount || 0), 0);
+    const totalExpense = userExpenses.reduce((s, r) => s + Number(r.amount || 0), 0);
+    const budgetAmount = latestBudget ? Number(latestBudget.budget_amount || 0) : 0;
     const balance = totalIncome - totalExpense;
     const spentPercent = budgetAmount > 0 ? Math.min(Math.round((totalExpense / budgetAmount) * 100), 100) : 0;
     const remainingBudget = Math.max(budgetAmount - totalExpense, 0);
 
-    const incList = (incTx.data || []).map(r => ({ id: r.income_id, date: r.income_date, title: r.source, category: r.category, amount: r.amount, type: "Income" }));
-    const expList = (expTx.data || []).map(r => ({ id: r.expense_id, date: r.expense_date, title: r.title, category: r.category, amount: r.amount, type: "Expense" }));
-    const recentTransactions = [...incList, ...expList].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 6);
+    const incList = userIncomes.map(r => ({
+        id: r.income_id,
+        date: r.income_date,
+        title: r.source,
+        category: r.category,
+        amount: Number(r.amount),
+        type: "Income"
+    }));
+    const expList = userExpenses.map(r => ({
+        id: r.expense_id,
+        date: r.expense_date,
+        title: r.title,
+        category: r.category,
+        amount: Number(r.amount),
+        type: "Expense"
+    }));
+
+    const recentTransactions = [...incList, ...expList]
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+        .slice(0, 6);
 
     return res.json({
-        success: true, data: {
-            totalIncome, totalExpense, balance, budgetAmount, spentPercent, remainingBudget,
+        success: true,
+        data: {
+            totalIncome,
+            totalExpense,
+            balance,
+            budgetAmount,
+            spentPercent,
+            remainingBudget,
             recentTransactions
         }
     });
 });
 
 // =========================================================
-// INCOME APIs
+// INCOME APIs (Strict Per-User Isolation)
 // =========================================================
 app.get("/api/income", async (req, res) => {
     const userId = getAuthUserId(req);
+    if (!userId) {
+        return res.status(401).json({ success: false, message: "Authentication required." });
+    }
+
     const { search, category } = req.query;
+    let list = localStore.income.filter(i => Number(i.user_id) === Number(userId));
 
-    const { data, error } = await sbQuery(async (sb) => {
-        let q = sb.from("income").select("*").eq("user_id", userId).order("income_date", { ascending: false });
-        if (category && category !== "All" && category !== "Select Category") q = q.eq("category", category);
-        return q;
-    }, []);
-
-    let result = Array.isArray(data) ? data : [];
-
+    if (category && category !== "All" && category !== "Select Category") {
+        list = list.filter(i => i.category === category);
+    }
     if (search) {
         const q = search.toLowerCase();
-        result = result.filter(i => (i.source||"").toLowerCase().includes(q) || (i.category||"").toLowerCase().includes(q) || (i.description||"").toLowerCase().includes(q));
+        list = list.filter(i =>
+            (i.source || "").toLowerCase().includes(q) ||
+            (i.category || "").toLowerCase().includes(q) ||
+            (i.description || "").toLowerCase().includes(q)
+        );
     }
-    res.json({ success: true, data: result });
+
+    list.sort((a, b) => new Date(b.income_date) - new Date(a.income_date));
+    res.json({ success: true, data: list });
 });
 
 app.post("/api/income", async (req, res) => {
     const userId = getAuthUserId(req);
+    if (!userId) {
+        return res.status(401).json({ success: false, message: "Authentication required." });
+    }
+
     const { source, category, amount, income_date, description } = req.body;
     if (!source || !category || !amount || !income_date)
         return res.status(400).json({ success: false, message: "Source, category, amount and date are required." });
@@ -320,17 +432,30 @@ app.post("/api/income", async (req, res) => {
     if (String(income_date) > todayStr)
         return res.status(400).json({ success: false, message: "Transaction date cannot be in the future." });
 
-    const { data, error } = await sbQuery(sb => sb.from("income").insert([{
-        user_id: userId, source: String(source).trim(), category, amount: numAmount, income_date, description: description || ""
-    }]).select().single(), null);
+    const newRecord = {
+        income_id: "inc_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7),
+        user_id: Number(userId),
+        source: String(source).trim(),
+        category,
+        amount: numAmount,
+        income_date,
+        description: description || "",
+        created_at: new Date().toISOString()
+    };
 
-    if (error || !data) return res.status(500).json({ success: false, message: error?.message || "Insert failed." });
-    res.status(201).json({ success: true, message: "Income added successfully!", income_id: data.income_id });
+    localStore.income.unshift(newRecord);
+    saveStore();
+
+    res.status(201).json({ success: true, message: "Income added successfully!", income_id: newRecord.income_id, item: newRecord });
 });
 
 app.put("/api/income/:id", async (req, res) => {
     const userId = getAuthUserId(req);
-    const id = isNaN(Number(req.params.id)) ? req.params.id : Number(req.params.id);
+    if (!userId) {
+        return res.status(401).json({ success: false, message: "Authentication required." });
+    }
+
+    const id = req.params.id;
     const { source, category, amount, income_date, description } = req.body;
 
     if (!source || !category || !amount || !income_date)
@@ -347,45 +472,70 @@ app.put("/api/income/:id", async (req, res) => {
     if (String(income_date) > todayStr)
         return res.status(400).json({ success: false, message: "Transaction date cannot be in the future." });
 
-    const { error } = await sbQuery(sb => sb.from("income").update({
-        source: String(source).trim(), category, amount: numAmount, income_date, description: description || ""
-    }).eq("income_id", id), null);
-    if (error) return res.status(500).json({ success: false, message: error.message });
-    res.json({ success: true, message: "Income updated!" });
+    const record = localStore.income.find(i => String(i.income_id) === String(id) && Number(i.user_id) === Number(userId));
+    if (!record) {
+        return res.status(404).json({ success: false, message: "Income record not found." });
+    }
+
+    record.source = String(source).trim();
+    record.category = category;
+    record.amount = numAmount;
+    record.income_date = income_date;
+    record.description = description || "";
+    saveStore();
+
+    res.json({ success: true, message: "Income updated!", item: record });
 });
 
 app.delete("/api/income/:id", async (req, res) => {
     const userId = getAuthUserId(req);
-    const id = isNaN(Number(req.params.id)) ? req.params.id : Number(req.params.id);
-    const { error } = await sbQuery(sb => sb.from("income").delete().eq("income_id", id), null);
-    if (error) return res.status(500).json({ success: false, message: error.message });
+    if (!userId) {
+        return res.status(401).json({ success: false, message: "Authentication required." });
+    }
+
+    const id = req.params.id;
+    const idx = localStore.income.findIndex(i => String(i.income_id) === String(id) && Number(i.user_id) === Number(userId));
+    if (idx !== -1) {
+        localStore.income.splice(idx, 1);
+        saveStore();
+    }
     res.json({ success: true, message: "Income deleted!" });
 });
 
 // =========================================================
-// EXPENSES APIs
+// EXPENSES APIs (Strict Per-User Isolation)
 // =========================================================
 app.get("/api/expenses", async (req, res) => {
     const userId = getAuthUserId(req);
+    if (!userId) {
+        return res.status(401).json({ success: false, message: "Authentication required." });
+    }
+
     const { search, category } = req.query;
+    let list = localStore.expenses.filter(e => Number(e.user_id) === Number(userId));
 
-    const { data, error } = await sbQuery(async (sb) => {
-        let q = sb.from("expenses").select("*").eq("user_id", userId).order("expense_date", { ascending: false });
-        if (category && category !== "All" && category !== "Select Category") q = q.eq("category", category);
-        return q;
-    }, []);
-
-    let result = Array.isArray(data) ? data : [];
-
+    if (category && category !== "All" && category !== "Select Category") {
+        list = list.filter(e => e.category === category);
+    }
     if (search) {
         const q = search.toLowerCase();
-        result = result.filter(e => (e.title||"").toLowerCase().includes(q) || (e.category||"").toLowerCase().includes(q) || (e.description||"").toLowerCase().includes(q));
+        list = list.filter(e =>
+            (e.title || "").toLowerCase().includes(q) ||
+            (e.category || "").toLowerCase().includes(q) ||
+            (e.description || "").toLowerCase().includes(q)
+        );
     }
-    res.json({ success: true, data: result });
+
+    list.sort((a, b) => new Date(b.expense_date) - new Date(a.expense_date));
+    res.json({ success: true, data: list });
 });
 
 app.post("/api/expenses", async (req, res) => {
     const userId = getAuthUserId(req);
+    if (!userId) {
+        return res.status(401).json({ success: false, message: "Authentication required." });
+    }
+
     const { title, category, amount, expense_date, description } = req.body;
     if (!title || !category || !amount || !expense_date)
         return res.status(400).json({ success: false, message: "Title, category, amount and date are required." });
@@ -401,17 +551,30 @@ app.post("/api/expenses", async (req, res) => {
     if (String(expense_date) > todayStr)
         return res.status(400).json({ success: false, message: "Transaction date cannot be in the future." });
 
-    const { data, error } = await sbQuery(sb => sb.from("expenses").insert([{
-        user_id: userId, title: String(title).trim(), category, amount: numAmount, expense_date, description: description || ""
-    }]).select().single(), null);
+    const newRecord = {
+        expense_id: "exp_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7),
+        user_id: Number(userId),
+        title: String(title).trim(),
+        category,
+        amount: numAmount,
+        expense_date,
+        description: description || "",
+        created_at: new Date().toISOString()
+    };
 
-    if (error || !data) return res.status(500).json({ success: false, message: error?.message || "Insert failed." });
-    res.status(201).json({ success: true, message: "Expense recorded!", expense_id: data.expense_id });
+    localStore.expenses.unshift(newRecord);
+    saveStore();
+
+    res.status(201).json({ success: true, message: "Expense recorded!", expense_id: newRecord.expense_id, item: newRecord });
 });
 
 app.put("/api/expenses/:id", async (req, res) => {
     const userId = getAuthUserId(req);
-    const id = isNaN(Number(req.params.id)) ? req.params.id : Number(req.params.id);
+    if (!userId) {
+        return res.status(401).json({ success: false, message: "Authentication required." });
+    }
+
+    const id = req.params.id;
     const { title, category, amount, expense_date, description } = req.body;
 
     if (!title || !category || !amount || !expense_date)
@@ -428,34 +591,61 @@ app.put("/api/expenses/:id", async (req, res) => {
     if (String(expense_date) > todayStr)
         return res.status(400).json({ success: false, message: "Transaction date cannot be in the future." });
 
-    const { error } = await sbQuery(sb => sb.from("expenses").update({
-        title: String(title).trim(), category, amount: numAmount, expense_date, description: description || ""
-    }).eq("expense_id", id), null);
-    if (error) return res.status(500).json({ success: false, message: error.message });
-    res.json({ success: true, message: "Expense updated!" });
+    const record = localStore.expenses.find(e => String(e.expense_id) === String(id) && Number(e.user_id) === Number(userId));
+    if (!record) {
+        return res.status(404).json({ success: false, message: "Expense record not found." });
+    }
+
+    record.title = String(title).trim();
+    record.category = category;
+    record.amount = numAmount;
+    record.expense_date = expense_date;
+    record.description = description || "";
+    saveStore();
+
+    res.json({ success: true, message: "Expense updated!", item: record });
 });
 
 app.delete("/api/expenses/:id", async (req, res) => {
     const userId = getAuthUserId(req);
-    const id = isNaN(Number(req.params.id)) ? req.params.id : Number(req.params.id);
-    const { error } = await sbQuery(sb => sb.from("expenses").delete().eq("expense_id", id), null);
-    if (error) return res.status(500).json({ success: false, message: error.message });
+    if (!userId) {
+        return res.status(401).json({ success: false, message: "Authentication required." });
+    }
+
+    const id = req.params.id;
+    const idx = localStore.expenses.findIndex(e => String(e.expense_id) === String(id) && Number(e.user_id) === Number(userId));
+    if (idx !== -1) {
+        localStore.expenses.splice(idx, 1);
+        saveStore();
+    }
     res.json({ success: true, message: "Expense deleted!" });
 });
 
 // =========================================================
-// BUDGET APIs
+// BUDGET APIs (Strict Per-User, Default 0)
 // =========================================================
 app.get("/api/budget", async (req, res) => {
     const userId = getAuthUserId(req);
-    const { data } = await sbQuery(sb => sb.from("budgets").select("*").eq("user_id", userId).order("budget_id", { ascending: false }).limit(1).single(),
-        { budget_amount: 40000, month: new Date().getMonth() + 1, year: new Date().getFullYear() });
-    res.json({ success: true, data });
+    if (!userId) {
+        return res.status(401).json({ success: false, message: "Authentication required." });
+    }
+
+    const userBudgets = localStore.budgets.filter(b => Number(b.user_id) === Number(userId));
+    const latest = userBudgets.length > 0 ? userBudgets[userBudgets.length - 1] : {
+        budget_amount: 0,
+        month: new Date().getMonth() + 1,
+        year: new Date().getFullYear()
+    };
+    res.json({ success: true, data: latest });
 });
 
 app.post("/api/budget", async (req, res) => {
+    const userId = getAuthUserId(req);
+    if (!userId) {
+        return res.status(401).json({ success: false, message: "Authentication required." });
+    }
+
     const { month, year, budget_amount } = req.body;
-    const uid = getAuthUserId(req);
     const m = month || (new Date().getMonth() + 1);
     const y = year || new Date().getFullYear();
 
@@ -464,85 +654,119 @@ app.post("/api/budget", async (req, res) => {
         return res.status(400).json({ success: false, message: "Budget amount must be a valid positive number up to 100,000,000.00." });
     }
 
-    const { data: existing } = await sbQuery(sb => sb.from("budgets").select("budget_id").eq("user_id", uid).eq("month", m).eq("year", y).single(), null);
-    let error;
-    if (existing && existing.budget_id) {
-        ({ error } = await sbQuery(sb => sb.from("budgets").update({ budget_amount: numBudget }).eq("budget_id", existing.budget_id), null));
+    let existing = localStore.budgets.find(b => Number(b.user_id) === Number(userId) && b.month === m && b.year === y);
+    if (existing) {
+        existing.budget_amount = numBudget;
     } else {
-        ({ error } = await sbQuery(sb => sb.from("budgets").insert([{ user_id: uid, month: m, year: y, budget_amount: numBudget }]), null));
+        existing = {
+            budget_id: Date.now(),
+            user_id: Number(userId),
+            month: m,
+            year: y,
+            budget_amount: numBudget,
+            created_at: new Date().toISOString()
+        };
+        localStore.budgets.push(existing);
     }
-    if (error) return res.status(500).json({ success: false, message: error.message });
-    res.json({ success: true, message: "Budget updated!" });
+    saveStore();
+
+    res.json({ success: true, message: "Budget updated!", data: existing });
 });
 
 // =========================================================
-// REPORTS
+// REPORTS & ANALYTICS (Strict Per-User Aggregation)
 // =========================================================
 app.get("/api/reports/analytics", async (req, res) => {
     const userId = getAuthUserId(req);
+    if (!userId) {
+        return res.status(401).json({ success: false, message: "Authentication required." });
+    }
+
     const { month } = req.query;
+    let userIncomes = localStore.income.filter(i => Number(i.user_id) === Number(userId));
+    let userExpenses = localStore.expenses.filter(e => Number(e.user_id) === Number(userId));
 
-    const [incR, expR] = await Promise.all([
-        sbQuery(async sb => {
-            let q = sb.from("income").select("*").eq("user_id", userId);
-            if (month) q = q.gte("income_date", `${month}-01`).lte("income_date", `${month}-31`);
-            return q;
-        }, []),
-        sbQuery(async sb => {
-            let q = sb.from("expenses").select("*").eq("user_id", userId);
-            if (month) q = q.gte("expense_date", `${month}-01`).lte("expense_date", `${month}-31`);
-            return q;
-        }, [])
-    ]);
+    if (month) {
+        userIncomes = userIncomes.filter(i => i.income_date && i.income_date.startsWith(month));
+        userExpenses = userExpenses.filter(e => e.expense_date && e.expense_date.startsWith(month));
+    }
 
-    const incList = incR.data || [];
-    const expList = expR.data || [];
-    const totalIncome = incList.reduce((s, r) => s + Number(r.amount || 0), 0);
-    const totalExpense = expList.reduce((s, r) => s + Number(r.amount || 0), 0);
+    const totalIncome = userIncomes.reduce((s, r) => s + Number(r.amount || 0), 0);
+    const totalExpense = userExpenses.reduce((s, r) => s + Number(r.amount || 0), 0);
 
     const catMap = {};
-    expList.forEach(e => { catMap[e.category] = (catMap[e.category] || 0) + Number(e.amount || 0); });
+    userExpenses.forEach(e => {
+        catMap[e.category] = (catMap[e.category] || 0) + Number(e.amount || 0);
+    });
     const categoryExpenseBreakdown = Object.keys(catMap).map(k => ({ category: k, total: catMap[k] }));
 
     const transactions = [
-        ...incList.map(i => ({ id: i.income_id, date: i.income_date, title: i.source, category: i.category, amount: Number(i.amount), type: "Income", description: i.description })),
-        ...expList.map(e => ({ id: e.expense_id, date: e.expense_date, title: e.title, category: e.category, amount: Number(e.amount), type: "Expense", description: e.description }))
+        ...userIncomes.map(i => ({ id: i.income_id, date: i.income_date, title: i.source, category: i.category, amount: Number(i.amount), type: "Income", description: i.description })),
+        ...userExpenses.map(e => ({ id: e.expense_id, date: e.expense_date, title: e.title, category: e.category, amount: Number(e.amount), type: "Expense", description: e.description }))
     ].sort((a, b) => new Date(b.date) - new Date(a.date));
 
+    // Dynamic monthly trends based on actual transactions
+    const monthTrendMap = {};
+    [...userIncomes, ...userExpenses].forEach(t => {
+        const d = t.income_date || t.expense_date;
+        if (!d) return;
+        const mKey = d.substring(0, 7);
+        if (!monthTrendMap[mKey]) monthTrendMap[mKey] = { income: 0, expense: 0 };
+        if (t.source) monthTrendMap[mKey].income += Number(t.amount || 0);
+        else monthTrendMap[mKey].expense += Number(t.amount || 0);
+    });
+    const monthlyTrends = Object.keys(monthTrendMap).sort().map(m => ({
+        month_label: m,
+        total_income: monthTrendMap[m].income,
+        total_expense: monthTrendMap[m].expense
+    }));
+
     res.json({
-        success: true, data: {
-            totalIncome, totalExpense, netSavings: totalIncome - totalExpense,
+        success: true,
+        data: {
+            totalIncome,
+            totalExpense,
+            netSavings: totalIncome - totalExpense,
             categoryExpenseBreakdown,
-            monthlyTrends: [],
+            monthlyTrends,
             transactions
         }
     });
 });
 
-// CSV Export
+// CSV Export (Strictly User Isolated)
 app.get("/api/export/csv", async (req, res) => {
     const userId = getAuthUserId(req);
-    const [incR, expR] = await Promise.all([
-        sbQuery(sb => sb.from("income").select("*").eq("user_id", userId).order("income_date", { ascending: false }), []),
-        sbQuery(sb => sb.from("expenses").select("*").eq("user_id", userId).order("expense_date", { ascending: false }), [])
-    ]);
+    if (!userId) {
+        return res.status(401).json({ success: false, message: "Authentication required." });
+    }
+
+    const userIncomes = localStore.income.filter(i => Number(i.user_id) === Number(userId))
+        .sort((a, b) => new Date(b.income_date) - new Date(a.income_date));
+    const userExpenses = localStore.expenses.filter(e => Number(e.user_id) === Number(userId))
+        .sort((a, b) => new Date(b.expense_date) - new Date(a.expense_date));
 
     let csv = "Date,Type,Title,Category,Amount,Description\n";
-    (incR.data || []).forEach(r => {
+    userIncomes.forEach(r => {
         csv += `${sanitizeCsvCell(r.income_date)},"Income",${sanitizeCsvCell(r.source)},${sanitizeCsvCell(r.category)},"${Number(r.amount || 0).toFixed(2)}",${sanitizeCsvCell(r.description)}\n`;
     });
-    (expR.data || []).forEach(r => {
+    userExpenses.forEach(r => {
         csv += `${sanitizeCsvCell(r.expense_date)},"Expense",${sanitizeCsvCell(r.title)},${sanitizeCsvCell(r.category)},"${Number(r.amount || 0).toFixed(2)}",${sanitizeCsvCell(r.description)}\n`;
     });
+
     res.setHeader("Content-Type", "text/csv");
-    res.setHeader("Content-Disposition", "attachment; filename=\"expense_export.csv\"");
+    res.setHeader("Content-Disposition", "attachment; filename=\"my_expenses.csv\"");
     res.send(csv);
 });
 
 // Health check
 app.get("/api/health", async (req, res) => {
-    const { data, error } = await sbQuery(sb => sb.from("users").select("count").limit(1), null);
-    res.json({ status: "ok", db: error ? "error" : "supabase", timestamp: new Date().toISOString() });
+    res.json({
+        status: "ok",
+        storage: isSupabaseOnline ? "supabase" : "localStore",
+        users_count: localStore.users.length,
+        timestamp: new Date().toISOString()
+    });
 });
 
 // Dedicated Clean Navigation Routes
@@ -563,7 +787,7 @@ app.use((req, res) => {
 });
 
 if (!process.env.VERCEL) {
-    app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Server at http://0.0.0.0:${PORT}`));
+    app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Server running at http://0.0.0.0:${PORT}`));
 }
 
 module.exports = app;

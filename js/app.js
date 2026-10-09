@@ -219,7 +219,48 @@ function renderSmartAIInsights(stats, containerId = 'smartAIInsightsContainer') 
     const remainingDays = Math.max(totalDaysInMonth - currentDay, 0);
 
     const totalExpense = Number(stats.totalExpense || 0);
-    const budgetAmount = Number(stats.budgetAmount || 40000);
+    const budgetAmount = Number(stats.budgetAmount || 0);
+
+    if (budgetAmount <= 0 && totalExpense <= 0) {
+        container.innerHTML = `
+            <div class="card card-modern border border-primary-subtle bg-light mb-4 shadow-sm">
+                <div class="card-body p-3 p-md-4">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="fs-4">🤖</span>
+                            <h6 class="fw-bold mb-0">Smart AI Financial Velocity & Forecasting</h6>
+                        </div>
+                        <span class="badge bg-primary px-3 py-2 rounded-pill">Active</span>
+                    </div>
+                    <p class="small mb-0 text-secondary">
+                        Welcome to your personal financial dashboard. Set a monthly budget and log your daily expenses to unlock real-time spending velocity and month-end projections.
+                    </p>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    if (budgetAmount <= 0) {
+        container.innerHTML = `
+            <div class="card card-modern border border-warning-subtle bg-warning-subtle text-warning-emphasis mb-4 shadow-sm">
+                <div class="card-body p-3 p-md-4">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="fs-4">💡</span>
+                            <h6 class="fw-bold mb-0">Monthly Budget Not Set</h6>
+                        </div>
+                        <button class="btn btn-sm btn-outline-warning text-dark fw-bold px-3 py-1 rounded-pill" onclick="openBudgetModal()">Set Budget Target</button>
+                    </div>
+                    <p class="small mb-0">
+                        You have recorded ${formatINR(totalExpense)} in expenses. Set a monthly budget to enable velocity forecasting and automatic multi-stage threshold alerts.
+                    </p>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
     const dailyVelocity = totalExpense / currentDay;
     const projectedSpend = totalExpense + (dailyVelocity * remainingDays);
     const projectedRatio = budgetAmount > 0 ? (projectedSpend / budgetAmount) * 100 : 0;
@@ -558,7 +599,7 @@ window.openBudgetModal = function() {
                             <form id="budgetSettingForm">
                                 <div class="mb-3">
                                     <label class="form-label fw-semibold">Monthly Budget Amount (₹)</label>
-                                    <input type="number" id="inputNewBudget" class="form-control form-control-lg" placeholder="e.g. 40000" min="100" required>
+                                    <input type="number" id="inputNewBudget" class="form-control form-control-lg" placeholder="e.g. 25000" min="100" required>
                                 </div>
                                 <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold">Save Budget Target</button>
                             </form>
@@ -605,7 +646,8 @@ window.openBudgetModal = function() {
         });
     }
 
-    const currentBudget = document.getElementById('budgetTotal')?.innerText.replace(/[^0-9]/g, '') || 40000;
+    const rawVal = document.getElementById('budgetTotal')?.innerText.replace(/[^0-9.]/g, '');
+    const currentBudget = (rawVal && Number(rawVal) > 0) ? Number(rawVal) : '';
     const inputEl = document.getElementById('inputNewBudget');
     if (inputEl) inputEl.value = currentBudget;
 
@@ -721,6 +763,7 @@ async function initDashboard() {
         console.error('Failed to load dashboard:', err);
     }
 }
+window.initDashboardPage = initDashboard;
 
 // Handler for Editing Recent Transactions directly from Dashboard
 window.handleEditRecent = async function(id, type) {
@@ -1119,8 +1162,8 @@ async function initReportsPage() {
 
         if (totalIncomeEl) totalIncomeEl.innerText = formatINR(data.totalIncome);
         if (totalExpenseEl) totalExpenseEl.innerText = formatINR(data.totalExpense);
-        // Render Point 9: Smart AI Financial Velocity in Reports
-        renderSmartAIInsights({ totalExpense: data.totalExpense, budgetAmount: 40000 }, 'reportAIInsightsContainer');
+        const currentStats = await API.getDashboardStats();
+        renderSmartAIInsights({ totalExpense: data.totalExpense, budgetAmount: currentStats.budgetAmount || 0 }, 'reportAIInsightsContainer');
 
         if (netSavingsEl) {
             netSavingsEl.innerText = formatINR(data.netSavings);
@@ -1130,19 +1173,20 @@ async function initReportsPage() {
         // Render Bar Chart (Monthly Trends)
         const barCanvas = document.getElementById('barChart');
         if (barCanvas) {
-            const labels = data.monthlyTrends.map(t => t.month_label);
-            const incData = data.monthlyTrends.map(t => t.total_income);
-            const expData = data.monthlyTrends.map(t => t.total_expense);
+            const hasTrends = Array.isArray(data.monthlyTrends) && data.monthlyTrends.length > 0;
+            const labels = hasTrends ? data.monthlyTrends.map(t => t.month_label) : ['Current Month'];
+            const incData = hasTrends ? data.monthlyTrends.map(t => t.total_income) : [data.totalIncome || 0];
+            const expData = hasTrends ? data.monthlyTrends.map(t => t.total_expense) : [data.totalExpense || 0];
 
             if (barChartInstance) barChartInstance.destroy();
 
             barChartInstance = new Chart(barCanvas, {
                 type: 'bar',
                 data: {
-                    labels: labels.length ? labels : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+                    labels,
                     datasets: [
-                        { label: 'Income', data: incData.length ? incData : [40000, 45000, 50000, 47000, 52000, 50000], backgroundColor: '#10b981', borderRadius: 6 },
-                        { label: 'Expense', data: expData.length ? expData : [25000, 28000, 30000, 27000, 32000, 29000], backgroundColor: '#ef4444', borderRadius: 6 }
+                        { label: 'Income', data: incData, backgroundColor: '#10b981', borderRadius: 6 },
+                        { label: 'Expense', data: expData, backgroundColor: '#ef4444', borderRadius: 6 }
                     ]
                 },
                 options: {
@@ -1157,24 +1201,38 @@ async function initReportsPage() {
         // Render Pie / Doughnut Chart (Categories)
         const pieCanvas = document.getElementById('pieChart');
         if (pieCanvas) {
-            const pieLabels = data.categoryExpenseBreakdown.map(c => c.category);
-            const pieData = data.categoryExpenseBreakdown.map(c => c.total);
+            const hasBreakdown = Array.isArray(data.categoryExpenseBreakdown) && data.categoryExpenseBreakdown.length > 0;
+            const pieLabels = hasBreakdown ? data.categoryExpenseBreakdown.map(c => c.category) : ['No Expenses Yet'];
+            const pieData = hasBreakdown ? data.categoryExpenseBreakdown.map(c => c.total) : [1];
+            const pieColors = hasBreakdown 
+                ? ['#f59e0b', '#0284c7', '#ec4899', '#ef4444', '#8b5cf6', '#10b981', '#14b8a6', '#64748b']
+                : ['#e2e8f0'];
 
             if (pieChartInstance) pieChartInstance.destroy();
 
             pieChartInstance = new Chart(pieCanvas, {
                 type: 'doughnut',
                 data: {
-                    labels: pieLabels.length ? pieLabels : ['Food', 'Travel', 'Shopping', 'Bills', 'Others'],
+                    labels: pieLabels,
                     datasets: [{
-                        data: pieData.length ? pieData : [4250, 1200, 2500, 2300, 1000],
-                        backgroundColor: ['#f59e0b', '#0284c7', '#ec4899', '#ef4444', '#8b5cf6', '#10b981']
+                        data: pieData,
+                        backgroundColor: pieColors
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { legend: { position: 'bottom' } }
+                    plugins: {
+                        legend: { position: 'bottom' },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    if (!hasBreakdown) return ' No expense records yet';
+                                    return ` ${context.label}: ${formatINR(context.raw)}`;
+                                }
+                            }
+                        }
+                    }
                 }
             });
         }
